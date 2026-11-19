@@ -157,6 +157,8 @@ let draggedDailyId = null;
 let quickLogFilterListId = "ALL";
 let pendingConfirmAction = null;
 let pendingInputAction = null;
+let isEditingActivities = false;
+let isEditingDailyTasks = false;
 
 // Calendar navigation state (initialized to logical today)
 const initialLogicalToday = getLogicalTodayDate();
@@ -541,9 +543,14 @@ function showToast(message) {
 // Theme Handling
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", state.theme);
+  const nextIcon = state.theme === "dark" ? "☀️" : "🌙";
   const icon = document.getElementById("theme-icon");
   if (icon) {
-    icon.textContent = state.theme === "dark" ? "☀️" : "🌙";
+    icon.textContent = nextIcon;
+  }
+  const footerIcon = document.getElementById("theme-icon-footer");
+  if (footerIcon) {
+    footerIcon.textContent = nextIcon;
   }
   const metaThemeColor = document.getElementById("meta-theme-color");
   if (metaThemeColor) {
@@ -918,7 +925,18 @@ function renderActivityPool() {
 
   const listEl = document.getElementById("activity-list");
   listEl.style.setProperty("--active-list-color", activeList.color || PALETTE[0]);
+  listEl.classList.toggle("is-editing", isEditingActivities);
   listEl.innerHTML = "";
+
+  const editActivitiesBtn = document.getElementById("btn-edit-activities");
+  const editActivitiesLabel = document.getElementById("btn-edit-activities-label");
+  if (editActivitiesBtn) {
+    editActivitiesBtn.classList.toggle("is-active", isEditingActivities);
+    editActivitiesBtn.setAttribute("aria-pressed", isEditingActivities ? "true" : "false");
+  }
+  if (editActivitiesLabel) {
+    editActivitiesLabel.textContent = isEditingActivities ? "Done" : "Edit";
+  }
 
   if (activeList.items.length === 0) {
     listEl.innerHTML = `<li class="empty-state">No activities in this list yet. Add one above!</li>`;
@@ -936,7 +954,7 @@ function renderActivityPool() {
 
   activeList.items.forEach((item) => {
     const li = document.createElement("li");
-    li.draggable = true;
+    li.draggable = isEditingActivities;
     li.dataset.itemId = item.id;
     const isChosen = state.activeDecision && state.activeDecision.itemId === item.id;
     li.className = `activity-item ${item.checked ? "" : "unchecked"} ${isChosen ? "is-chosen" : ""}`;
@@ -1128,7 +1146,18 @@ function renderDailyTasks() {
   const cardEl = document.getElementById("daily-tasks-card");
   const progressBadgeEl = document.getElementById("daily-tasks-progress-badge");
   const listEl = document.getElementById("daily-tasks-list");
+  listEl.classList.toggle("is-editing", isEditingDailyTasks);
   listEl.innerHTML = "";
+
+  const editDailyBtn = document.getElementById("btn-edit-daily");
+  const editDailyLabel = document.getElementById("btn-edit-daily-label");
+  if (editDailyBtn) {
+    editDailyBtn.classList.toggle("is-active", isEditingDailyTasks);
+    editDailyBtn.setAttribute("aria-pressed", isEditingDailyTasks ? "true" : "false");
+  }
+  if (editDailyLabel) {
+    editDailyLabel.textContent = isEditingDailyTasks ? "Done" : "Edit";
+  }
 
   const total = state.dailyTasks.length;
   const doneCount = state.dailyTasks.filter((t) => t.doneToday).length;
@@ -1145,7 +1174,7 @@ function renderDailyTasks() {
 
   state.dailyTasks.forEach((task) => {
     const li = document.createElement("li");
-    li.draggable = true;
+    li.draggable = isEditingDailyTasks;
     li.dataset.dailyId = task.id;
     li.className = `daily-task-item ${task.doneToday ? "done" : ""}`;
 
@@ -2352,11 +2381,16 @@ function renderAll() {
 // Wire Up Event Listeners
 function initEvents() {
   // Theme toggle
-  document.getElementById("btn-theme-toggle").addEventListener("click", () => {
+  const handleToggleTheme = () => {
     state.theme = state.theme === "dark" ? "light" : "dark";
     saveState();
     applyTheme();
-  });
+  };
+  document.getElementById("btn-theme-toggle").addEventListener("click", handleToggleTheme);
+  const footerThemeBtn = document.getElementById("btn-theme-toggle-footer");
+  if (footerThemeBtn) {
+    footerThemeBtn.addEventListener("click", handleToggleTheme);
+  }
 
   // Decide For Me & Active Choice Actions
   document.getElementById("btn-decide").addEventListener("click", () => triggerDecisionRoll(false));
@@ -2397,6 +2431,23 @@ function initEvents() {
     saveState();
     renderAll();
   });
+
+  // Edit Mode Toggles for Activity List & Daily Tasks
+  const editActivitiesBtn = document.getElementById("btn-edit-activities");
+  if (editActivitiesBtn) {
+    editActivitiesBtn.addEventListener("click", () => {
+      isEditingActivities = !isEditingActivities;
+      renderActivityPool();
+    });
+  }
+
+  const editDailyBtn = document.getElementById("btn-edit-daily");
+  if (editDailyBtn) {
+    editDailyBtn.addEventListener("click", () => {
+      isEditingDailyTasks = !isEditingDailyTasks;
+      renderDailyTasks();
+    });
+  }
 
   // Add New Activity Form
   document.getElementById("form-add-item").addEventListener("submit", (e) => {
@@ -2638,7 +2689,7 @@ function initEvents() {
   });
 
   // Export Backup JSON
-  document.getElementById("btn-export").addEventListener("click", () => {
+  const handleExportBackup = () => {
     const dataStr = JSON.stringify(state, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2648,13 +2699,24 @@ function initEvents() {
     a.click();
     URL.revokeObjectURL(url);
     showToast("Backup JSON exported!");
-  });
+  };
+  document.getElementById("btn-export").addEventListener("click", handleExportBackup);
+  const footerExportBtn = document.getElementById("btn-export-footer");
+  if (footerExportBtn) {
+    footerExportBtn.addEventListener("click", handleExportBackup);
+  }
 
   // Import Backup JSON
   const fileInput = document.getElementById("file-import");
   document.getElementById("btn-import").addEventListener("click", () => {
     fileInput.click();
   });
+  const footerImportBtn = document.getElementById("btn-import-footer");
+  if (footerImportBtn) {
+    footerImportBtn.addEventListener("click", () => {
+      fileInput.click();
+    });
+  }
 
   fileInput.addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];

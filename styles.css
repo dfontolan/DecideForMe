@@ -1039,8 +1039,48 @@ body {
 
 .pool-bulk-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.daily-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-edit-mode {
+  gap: 4px;
+}
+
+.btn-edit-mode.is-active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.btn-edit-mode.is-active:hover:not(:disabled) {
+  background: var(--accent-primary-hover);
+}
+
+/* Hide Drag Grips, Rename & Delete buttons in normal mode; show them when Edit mode is toggled on */
+.activity-list:not(.is-editing) .drag-grip,
+.activity-list:not(.is-editing) .edit-item-btn,
+.activity-list:not(.is-editing) .delete-item-btn,
+.daily-tasks-list:not(.is-editing) .drag-grip,
+.daily-tasks-list:not(.is-editing) .edit-daily-btn,
+.daily-tasks-list:not(.is-editing) .delete-daily-btn {
+  display: none;
+}
+
+/* Hide daily completion checkmark button while editing to keep the row clean */
+.daily-tasks-list.is-editing .log-daily-btn,
+.activity-list.is-editing .log-direct-btn {
+  display: none;
 }
 
 /* Add Item Form */
@@ -1223,14 +1263,14 @@ body {
 }
 
 .activity-title-group {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: block;
+  flex: 1;
   min-width: 0;
+  line-height: 1.4;
 }
 
 .activity-title {
+  display: inline;
   font-size: 0.95rem;
   font-weight: 500;
   word-break: break-word;
@@ -1245,6 +1285,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  vertical-align: middle;
+  margin-left: 6px;
   font-size: 0.72rem;
   min-width: 20px;
   height: 20px;
@@ -1361,6 +1403,7 @@ body {
 }
 
 .daily-task-title {
+  display: inline;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -2463,6 +2506,10 @@ body {
   text-align: center;
 }
 
+.footer-mobile-actions {
+  display: none;
+}
+
 .footer-reset-btn {
   display: none;
 }
@@ -2534,6 +2581,9 @@ body {
     gap: 6px;
   }
 
+  .header-actions #btn-theme-toggle,
+  .header-actions #btn-export,
+  .header-actions #btn-import,
   .header-actions #btn-reset-data {
     display: none;
   }
@@ -2542,6 +2592,15 @@ body {
     margin-top: 24px;
     padding-top: 18px;
     border-top: 1px solid var(--border-subtle);
+  }
+
+  .footer-mobile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
   }
 
   .footer-reset-btn {
