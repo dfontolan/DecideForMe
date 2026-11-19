@@ -665,6 +665,7 @@ function renderListTabs() {
     btn.ariaSelected = list.id === state.activeListId ? "true" : "false";
     btn.className = `list-tab ${list.id === state.activeListId ? "active" : ""}`;
     const listColor = list.color || PALETTE[0];
+    btn.style.setProperty("--tab-list-color", listColor);
     btn.innerHTML = `
       <span class="drag-grip" title="Drag to reorder list" aria-hidden="true">⠿</span>
       <span class="color-dot list-tab-dot" style="background-color: ${listColor}"></span>
@@ -760,6 +761,7 @@ function renderHeroListSwitcherButtons(containerEl, activeList) {
     btn.role = "tab";
     btn.ariaSelected = isActive ? "true" : "false";
     btn.className = `hero-list-btn ${isActive ? "active" : ""}`;
+    btn.style.setProperty("--pill-list-color", listColor);
     btn.innerHTML = `
       <span class="color-dot hero-list-dot" style="background-color: ${listColor}"></span>
       <span>${escapeHtml(list.name)}</span>
@@ -915,6 +917,7 @@ function renderActivityPool() {
   }
 
   const listEl = document.getElementById("activity-list");
+  listEl.style.setProperty("--active-list-color", activeList.color || PALETTE[0]);
   listEl.innerHTML = "";
 
   if (activeList.items.length === 0) {
@@ -1325,19 +1328,13 @@ function getRollDelaysMs() {
 
 function clearSweepingHighlight() {
   document
-    .querySelectorAll("#activity-list .activity-item.is-sweeping, #hero-candidate-pills .hero-candidate-chip.is-sweeping")
+    .querySelectorAll("#hero-candidate-pills .hero-candidate-chip.is-sweeping")
     .forEach((el) => el.classList.remove("is-sweeping"));
 }
 
 function applySweepingHighlight(itemId) {
   clearSweepingHighlight();
   const escapedId = CSS.escape(itemId);
-  const row = document.querySelector(
-    `#activity-list .activity-item[data-item-id="${escapedId}"]`
-  );
-  if (row) {
-    row.classList.add("is-sweeping");
-  }
   const heroChip = document.querySelector(
     `#hero-candidate-pills .hero-candidate-chip[data-item-id="${escapedId}"]`
   );
