@@ -2629,10 +2629,24 @@ body {
     gap: 3px;
   }
 
+  .cal-day-header {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 2px;
+    column-gap: 1px;
+  }
+
   .cal-day-num {
-    font-size: 0.7rem;
-    min-width: 17px;
-    height: 17px;
+    font-size: 0.68rem;
+    min-width: 16px;
+    height: 16px;
+  }
+
+  .cal-day-badges {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 1px;
+    margin-left: auto;
   }
 
   .cal-day.chain-left::before,
@@ -2651,19 +2665,24 @@ body {
   }
 
   .cal-note-inline {
-    font-size: 0.64rem;
+    font-size: 0.56rem;
+    line-height: 1;
   }
 
   .cal-star-inline {
-    font-size: 0.68rem;
+    font-size: 0.62rem;
+    line-height: 1;
   }
 
   .cal-freeze-inline {
-    font-size: 0.65rem;
+    font-size: 0.6rem;
+    line-height: 1;
   }
 
   .cal-reroll-inline {
-    font-size: 0.58rem;
+    font-size: 0.52rem;
+    line-height: 1;
+    letter-spacing: -0.05em;
   }
 
   .cal-pill {
