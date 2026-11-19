@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1117" id="meta-theme-color" />
+  <meta name="description" content="Local-first free-time activity picker, weighted dice roller, daily checklist, and calendar habit logger." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="DecideForMe" />
+  <title>DecideForMe — Free-Time Activity Picker & Habit Logger</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">🎲</div>
+        <div>
+          <h1>DecideForMe</h1>
+          <p class="brand-subtitle">Check what you're up for, roll the dice, and log your wins.</p>
+        </div>
+      </div>
+
+      <!-- Streak & Quick Stats Bar -->
+      <div class="stats-bar" aria-label="Activity statistics">
+        <div class="stat-pill" title="Consecutive days with at least one completed activity AND all Daily Tasks completed">
+          <span class="stat-icon">🔥</span>
+          <div>
+            <span class="stat-value" id="stat-current-streak">0d</span>
+            <span class="stat-label">Streak <small id="stat-best-streak">(Best: 0d)</small></span>
+          </div>
+        </div>
+        <div class="stat-pill" title="Activities completed in the last 7 days">
+          <span class="stat-icon">⚡</span>
+          <div>
+            <span class="stat-value" id="stat-week-count">0</span>
+            <span class="stat-label">This Week</span>
+          </div>
+        </div>
+        <div class="stat-pill" title="Activities completed in the currently viewed calendar month">
+          <span class="stat-icon">📅</span>
+          <div>
+            <span class="stat-value" id="stat-month-count">0</span>
+            <span class="stat-label">This Month</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Backup & Utility Actions -->
+      <div class="header-actions">
+        <button type="button" class="btn btn-primary btn-sm hidden" id="btn-install-pwa" title="Install DecideForMe on your device for offline access">
+          📲 Install App
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-theme-toggle" title="Switch Light / Dark theme">
+          <span id="theme-icon">☀️</span>
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-export" title="Download backup JSON file">
+          ⬇ Export Backup
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-import" title="Restore from a backup JSON file">
+          ⬆ Import
+        </button>
+        <input type="file" id="file-import" accept=".json,application/json" hidden />
+        <button type="button" class="btn btn-outline-danger btn-sm" id="btn-reset-data" title="Delete all local data and restore default lists & settings">
+          <svg class="icon-svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+          Reset Data
+        </button>
+      </div>
+    </header>
+
+    <!-- Full-Width Hero Decision Banner -->
+    <section class="hero-decision-section" aria-label="Activity Decision Hero">
+      <div class="card decision-card" id="decision-card">
+        <!-- Idle / Ready State -->
+        <div class="decision-state" id="decision-idle">
+          <div class="decision-idle-content">
+            <div class="hero-list-switcher-wrap">
+              <span class="hero-list-label">Picking from:</span>
+              <div class="hero-list-switcher" id="hero-list-switcher" role="tablist" aria-label="Select activity list to roll from">
+                <!-- Populated by app.js -->
+              </div>
+            </div>
+            <h2 class="hero-title">What should we do next?</h2>
+            <div class="hero-candidate-pills" id="hero-candidate-pills" aria-label="Checked candidates"></div>
+            <div class="decision-cta-row">
+              <button type="button" class="btn btn-primary btn-lg btn-decide" id="btn-decide">
+                <span class="dice-icon">🎲</span> Decide For Me!
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rolling / Shuffle State -->
+        <div class="decision-state hidden" id="decision-rolling" aria-live="polite">
+          <div class="rolling-header">
+            <span class="rolling-dice-spin" aria-hidden="true">🎲</span>
+            <span class="rolling-label">Rolling your checked pool...</span>
+          </div>
+          <div class="rolling-slot-window">
+            <div class="rolling-slot" id="rolling-slot-text">Reading a book</div>
+          </div>
+        </div>
+
+        <!-- Chosen / Active Activity State -->
+        <div class="decision-state hidden" id="decision-active" aria-live="polite">
+          <div class="active-decision-header">
+            <span class="badge badge-success">✨ Chosen Activity</span>
+            <span class="text-muted small" id="chosen-probability-meta"></span>
+          </div>
+          <div class="chosen-title-wrap">
+            <span class="color-dot chosen-dot" id="chosen-color-dot"></span>
+            <h2 class="chosen-title" id="chosen-title">Go to the Gym</h2>
+          </div>
+          <p class="chosen-list-subtitle" id="chosen-list-subtitle">From: 60+ Min Tasks</p>
+
+          <div class="chosen-actions">
+            <button type="button" class="btn btn-success btn-lg" id="btn-complete-chosen">
+              ✓ Mark Complete &amp; Log
+            </button>
+            <button type="button" class="btn btn-secondary" id="btn-reroll">
+              🎲 Re-roll <span class="reroll-btn-count hidden" id="active-reroll-badge">0</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main 3-Column Dashboard Grid (Left: Activity Lists | Middle: Daily Tasks & Breakdown | Right: Calendar & Date Log) -->
+    <main class="dashboard-grid">
+      <!-- COLUMN 1 (LEFT): Unified Lists & Activity Pool Card -->
+      <section class="column-left" aria-label="Activity Lists">
+        <!-- Unified Lists & Activity Pool Card -->
+        <div class="card pool-card">
+          <!-- Integrated List Tabs Header -->
+          <div class="lists-header-block">
+            <div class="section-header">
+              <span class="section-label">Activity Lists</span>
+              <div class="list-manage-actions">
+                <button type="button" class="btn-icon" id="btn-rename-list" title="Rename current list" aria-label="Rename current list">
+                  <svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                </button>
+                <button type="button" class="btn-icon danger" id="btn-delete-list" title="Delete current list" aria-label="Delete current list">
+                  <svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="list-tabs-container">
+              <div class="list-tabs" id="list-tabs" role="tablist" aria-label="Activity lists">
+                <!-- Populated by app.js (Draggable tabs) -->
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" id="btn-new-list">
+                + New List
+              </button>
+            </div>
+          </div>
+
+          <!-- Active List Tasks Header -->
+          <div class="pool-header">
+            <div>
+              <div class="pool-title-row">
+                <span class="color-dot" id="current-list-color-dot"></span>
+                <h3 id="current-list-title">Activities</h3>
+                <span class="badge" id="current-list-count-badge" title="Checked / Total activities in this list">0/0</span>
+              </div>
+              <p class="text-muted small">
+                Checked items are in the roll. Click weight badge (<code>1x</code>, <code>2x</code>, <code>4x</code>) to adjust priority, or drag tasks to reorder.
+              </p>
+            </div>
+            <div class="pool-bulk-actions">
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-check-all">Check All</button>
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-uncheck-all">Uncheck All</button>
+            </div>
+          </div>
+
+          <!-- Add New Activity Form -->
+          <form class="add-item-form" id="form-add-item">
+            <input
+              type="text"
+              id="input-new-item"
+              class="input-text"
+              placeholder="Add an activity (e.g. Read 20 pages)"
+              required
+              maxlength="80"
+            />
+            <select id="select-new-weight" class="input-select" aria-label="Initial weight" title="Priority weight">
+              <option value="1">1x (Normal)</option>
+              <option value="2">2x (Likely)</option>
+              <option value="4">4x (Priority)</option>
+            </select>
+            <button type="submit" class="btn btn-primary">+ Add</button>
+          </form>
+
+          <!-- Activity Items List -->
+          <ul class="activity-list" id="activity-list">
+            <!-- Populated by app.js -->
+          </ul>
+        </div>
+      </section>
+
+      <!-- COLUMN 2 (MIDDLE, NARROWER): Daily Tasks Card + All-Time Breakdown -->
+      <section class="column-middle" aria-label="Daily Tasks and All-Time Breakdown">
+        <!-- Daily Tasks Card -->
+        <div class="card daily-tasks-card" id="daily-tasks-card">
+          <div class="inspector-header">
+            <div>
+              <span class="section-label">Daily Checklist</span>
+              <h4>Daily Tasks</h4>
+            </div>
+            <span class="badge" id="daily-tasks-progress-badge">0/0 done</span>
+          </div>
+          <p class="text-muted small daily-tasks-subtitle">
+            Complete all daily tasks to earn a <strong>⭐ Star Badge</strong> on today's calendar (resets at 3:00 AM).
+          </p>
+
+          <!-- Add Daily Task Form -->
+          <form class="add-daily-form" id="form-add-daily">
+            <input
+              type="text"
+              id="input-new-daily"
+              class="input-text"
+              placeholder="Add daily task..."
+              required
+              maxlength="60"
+            />
+            <button type="submit" class="btn btn-primary btn-sm">+ Add</button>
+          </form>
+
+          <!-- Daily Tasks List -->
+          <ul class="daily-tasks-list" id="daily-tasks-list">
+            <!-- Populated by app.js -->
+          </ul>
+        </div>
+
+        <!-- All-Time Breakdown Card -->
+        <div class="card insights-card">
+          <div class="inspector-header">
+            <div>
+              <span class="section-label">All-Time Breakdown</span>
+              <h4>Most Completed Activities</h4>
+            </div>
+            <span class="text-muted small" id="total-alltime-count">0 total</span>
+          </div>
+          <div class="top-activities-list" id="top-activities-list">
+            <!-- Populated by app.js -->
+          </div>
+        </div>
+      </section>
+
+      <!-- COLUMN 3 (RIGHT, WIDER): Calendar (Monthly & Weekly) & Selected Date Log -->
+      <section class="column-right" aria-label="Activity Calendar and Date Log">
+        <!-- Calendar Card -->
+        <div class="card calendar-card">
+          <div class="calendar-header">
+            <div class="calendar-title-block">
+              <div class="calendar-title-row">
+                <h3 id="calendar-period-title">November 2026</h3>
+                <span class="badge" id="calendar-reroll-summary" title="Total re-rolls in this calendar period">
+                  🎲 0 re-rolls
+                </span>
+              </div>
+              <p class="text-muted small">Click any day to inspect or log completed activities</p>
+            </div>
+
+            <div class="calendar-controls">
+              <!-- View Switcher: Monthly vs Weekly -->
+              <div class="view-toggle-group" role="group" aria-label="Calendar view mode">
+                <button type="button" class="view-toggle-btn active" id="btn-view-month">Month</button>
+                <button type="button" class="view-toggle-btn" id="btn-view-week">Week</button>
+              </div>
+
+              <!-- Period Navigation -->
+              <div class="calendar-nav">
+                <button type="button" class="btn btn-secondary btn-xs" id="btn-cal-prev" aria-label="Previous period">◀</button>
+                <button type="button" class="btn btn-ghost btn-xs" id="btn-cal-today">Today</button>
+                <button type="button" class="btn btn-secondary btn-xs" id="btn-cal-next" aria-label="Next period">▶</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="calendar-weekdays">
+            <span>Mon</span>
+            <span>Tue</span>
+            <span>Wed</span>
+            <span>Thu</span>
+            <span>Fri</span>
+            <span>Sat</span>
+            <span>Sun</span>
+          </div>
+
+          <div class="calendar-grid" id="calendar-grid">
+            <!-- Populated by app.js -->
+          </div>
+        </div>
+
+        <!-- Selected Day Inspector Card -->
+        <div class="card day-inspector-card">
+          <div class="inspector-header">
+            <div>
+              <span class="section-label">Selected Date Log</span>
+              <div class="inspector-title-row">
+                <h4 id="inspector-date-title">Today</h4>
+                <span class="badge" id="inspector-count-badge">0 completed</span>
+                <span class="badge" id="inspector-reroll-badge" title="Re-rolls on this date">🎲 0 re-rolls</span>
+                <span class="badge badge-star hidden" id="inspector-star-badge" title="All Daily Tasks were completed on this date!">⭐ Daily Star</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-toggle-quick-log">
+              + Log Activity
+            </button>
+          </div>
+
+          <!-- Collapsible Interactive Quick-Log Tray -->
+          <div class="quick-log-drawer hidden" id="quick-log-drawer">
+            <div class="quick-log-drawer-header">
+              <span class="quick-log-title">Click an activity to log it to <strong id="quick-log-date-label">this date</strong>:</span>
+              <button type="button" class="btn-icon" id="btn-close-quick-log" title="Close">✕</button>
+            </div>
+            <div class="quick-log-filter-tabs" id="quick-log-filter-tabs">
+              <!-- List filter pills populated by app.js -->
+            </div>
+            <div class="quick-log-chips" id="quick-log-chips">
+              <!-- Clickable activity chips populated by app.js -->
+            </div>
+          </div>
+
+          <ul class="day-log-list" id="day-log-list">
+            <!-- Populated by app.js -->
+          </ul>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Instant Floating Tooltip for Monthly Calendar Pills & "+N more" -->
+  <div class="cal-hover-tooltip hidden" id="cal-hover-tooltip" role="tooltip"></div>
+
+  <!-- Unified Pop-up Modal for Creating / Renaming a List, Activity, or Daily Task -->
+  <div class="modal-backdrop hidden" id="modal-list" role="dialog" aria-modal="true" aria-labelledby="modal-list-title">
+    <div class="modal-card">
+      <h3 id="modal-list-title">Rename</h3>
+      <form id="form-modal-list">
+        <label class="form-label" id="modal-list-label" for="input-list-name">Name</label>
+        <input
+          type="text"
+          id="input-list-name"
+          class="input-text"
+          placeholder="Enter name..."
+          required
+          maxlength="80"
+        />
+        <div class="modal-color-section hidden" id="modal-list-color-section">
+          <label class="form-label">List Color</label>
+          <div class="color-picker-group" id="modal-list-colors" role="radiogroup" aria-label="List color"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-modal-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-modal-save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Confirmation Pop-up Modal (for Deleting an Activity, Daily Task, or List) -->
+  <div class="modal-backdrop hidden" id="modal-confirm" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-title">
+    <div class="modal-card">
+      <h3 id="modal-confirm-title">Confirm Delete</h3>
+      <p class="confirm-message" id="modal-confirm-message">
+        Are you sure you want to delete this item?
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="btn-confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn-danger" id="btn-confirm-accept">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
