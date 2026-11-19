@@ -301,6 +301,15 @@ body {
   align-items: start;
 }
 
+.column-left,
+.column-middle,
+.column-right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
 @media (max-width: 1320px) {
   .dashboard-grid {
     grid-template-columns: 1fr 1fr;
@@ -322,15 +331,6 @@ body {
   .insights-card {
     order: 10;
   }
-}
-
-.column-left,
-.column-middle,
-.column-right {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-width: 0;
 }
 
 /* Cards */
