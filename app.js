@@ -6,6 +6,8 @@ const STORAGE_KEY = "decideForMe_state_v1";
 const WEIGHT_STEPS = [1, 2, 4];
 const DAILY_RESET_HOUR = 3; // 3:00 AM local time daily reset
 const ROLL_DURATION_MS = 3000; // Total roll animation duration in milliseconds (change this single number to speed up or slow down)
+const STREAK_FREEZE_INTERVAL = 3; // Consecutive active streak days required to earn +1 Streak Freeze
+const MAX_STREAK_FREEZES = 3; // Maximum Streak Freezes a user can hold at once
 
 const ICON_EDIT_SVG = `<svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`;
 const ICON_TRASH_SVG = `<svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>`;
@@ -135,6 +137,7 @@ function createDefaultState() {
     rerollsByDate: {}, // { "YYYY-MM-DD": number }
     dailyTasks: createDefaultDailyTasks(),
     dailyStarsByDate: {}, // { "YYYY-MM-DD": true }
+    dailyNotesByDate: {}, // { "YYYY-MM-DD": string }
     lists: createDefaultLists(),
     logs: []
   };
@@ -144,6 +147,9 @@ function createDefaultState() {
 let state = loadState();
 let selectedListModalColor = PALETTE[0];
 let isRolling = false;
+let completingDecisionSnapshot = null;
+let completingDecisionTimers = [];
+let winnerAuraTimer = null;
 let modalMode = "create"; // "create" | "rename"
 let draggedListId = null;
 let draggedItemId = null;
@@ -195,6 +201,10 @@ function loadState() {
     parsed.dailyStarsByDate =
       parsed.dailyStarsByDate && typeof parsed.dailyStarsByDate === "object"
         ? parsed.dailyStarsByDate
+        : {};
+    parsed.dailyNotesByDate =
+      parsed.dailyNotesByDate && typeof parsed.dailyNotesByDate === "object"
+        ? parsed.dailyNotesByDate
         : {};
 
     if (parsed.templateVersion !== TEMPLATE_VERSION) {
@@ -260,8 +270,132 @@ function checkAndPerformDailyReset(shouldRender = false) {
     saveState();
     if (shouldRender) {
       renderAll();
-      showToast("New day (3:00 AM reset) — all activities & daily tasks reset!");
+      const { frozenDates, availableFreezes } = computeStreakAndFreezes();
+      const yesterdayObj = getLogicalTodayDate();
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const yesterdayStr = toLocalDateStr(yesterdayObj);
+      if (frozenDates.has(yesterdayStr)) {
+        showToast(
+          `❄️ Streak Freeze used for yesterday! Your streak is safe (${availableFreezes}/${MAX_STREAK_FREEZES} freezes left).`
+        );
+      } else {
+        showToast("New day (3:00 AM reset) — all activities & daily tasks reset!");
+      }
     }
+  }
+}
+
+/**
+ * Computes current streak, best streak, available Streak Freezes (0..3),
+ * consecutive active days toward the next freeze (0..2), and the set of dates
+ * where a Streak Freeze was automatically consumed to protect the streak.
+ *
+ * Rules:
+ * - A day is an active streak day when at least 1 activity is logged AND
+ *   all Daily Tasks are completed (if any exist).
+ * - Every 3 consecutive active streak days awards +1 Streak Freeze (up to 3 max).
+ * - Missing a past day while currentStreak > 0 automatically consumes 1 available
+ *   Streak Freeze to bridge/preserve the streak without adding +1 to the day count,
+ *   and resets the 3-day consecutive active counter toward the next freeze.
+ * - While logical today is still in progress (not yet completed), it does not
+ *   consume a freeze or break the streak.
+ */
+function computeStreakAndFreezes(nowObj = new Date()) {
+  const requireDailyStar = state.dailyTasks.length > 0;
+  const qualifyingDates = Array.from(
+    new Set(
+      state.logs
+        .map((l) => l.date)
+        .filter((dStr) => !requireDailyStar || Boolean(state.dailyStarsByDate[dStr]))
+    )
+  ).sort();
+  const qualifyingSet = new Set(qualifyingDates);
+  const frozenDates = new Set();
+  const streakDayNumByDate = new Map();
+
+  if (qualifyingDates.length === 0) {
+    return {
+      currentStreak: 0,
+      bestStreak: 0,
+      availableFreezes: 0,
+      consecutiveActive: 0,
+      frozenDates,
+      qualifyingSet,
+      streakChainSet: new Set(),
+      streakDayNumByDate
+    };
+  }
+
+  const todayObj = getLogicalTodayDate(nowObj);
+  const todayStr = toLocalDateStr(todayObj);
+  const firstDateObj = parseLocalDateStr(qualifyingDates[0]);
+  const lastQualifyingObj = parseLocalDateStr(qualifyingDates[qualifyingDates.length - 1]);
+  const endDateObj = lastQualifyingObj > todayObj ? lastQualifyingObj : todayObj;
+
+  let currentStreak = 0;
+  let bestStreak = 0;
+  let availableFreezes = 0;
+  let consecutiveActive = 0;
+
+  const cursor = new Date(
+    firstDateObj.getFullYear(),
+    firstDateObj.getMonth(),
+    firstDateObj.getDate()
+  );
+
+  while (cursor <= endDateObj) {
+    const dStr = toLocalDateStr(cursor);
+
+    if (qualifyingSet.has(dStr)) {
+      currentStreak++;
+      consecutiveActive++;
+      streakDayNumByDate.set(dStr, currentStreak);
+      if (currentStreak > bestStreak) {
+        bestStreak = currentStreak;
+      }
+      if (consecutiveActive >= STREAK_FREEZE_INTERVAL) {
+        if (availableFreezes < MAX_STREAK_FREEZES) {
+          availableFreezes++;
+        }
+        consecutiveActive = 0;
+      }
+    } else if (dStr < todayStr) {
+      // Missed past day
+      consecutiveActive = 0;
+      if (currentStreak > 0) {
+        if (availableFreezes > 0) {
+          availableFreezes--;
+          frozenDates.add(dStr);
+          streakDayNumByDate.set(dStr, currentStreak);
+        } else {
+          currentStreak = 0;
+        }
+      }
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const streakChainSet = new Set([...qualifyingSet, ...frozenDates]);
+
+  return {
+    currentStreak,
+    bestStreak,
+    availableFreezes,
+    consecutiveActive,
+    frozenDates,
+    qualifyingSet,
+    streakChainSet,
+    streakDayNumByDate
+  };
+}
+
+function announceFreezeIfEarned(prevFreezes) {
+  const { availableFreezes, currentStreak } = computeStreakAndFreezes();
+  if (availableFreezes > prevFreezes) {
+    showToast(
+      `❄️ ${currentStreak}-day streak! You earned +1 Streak Freeze (${availableFreezes}/${MAX_STREAK_FREEZES})!`
+    );
   }
 }
 
@@ -413,7 +547,7 @@ function applyTheme() {
   }
   const metaThemeColor = document.getElementById("meta-theme-color");
   if (metaThemeColor) {
-    metaThemeColor.setAttribute("content", state.theme === "dark" ? "#0f1117" : "#f4f6fb");
+    metaThemeColor.setAttribute("content", state.theme === "dark" ? "#0f1117" : "#eaeef5");
   }
 }
 
@@ -612,6 +746,35 @@ function renderListTabs() {
 }
 
 // Render Decision Engine Card
+function renderHeroListSwitcherButtons(containerEl, activeList) {
+  if (!containerEl) return;
+  containerEl.innerHTML = "";
+  state.lists.forEach((list) => {
+    const isActive = list.id === activeList.id;
+    const listColor = list.color || PALETTE[0];
+    const totalCount = list.items.length;
+    const checkedCount = list.items.filter((i) => i.checked).length;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.role = "tab";
+    btn.ariaSelected = isActive ? "true" : "false";
+    btn.className = `hero-list-btn ${isActive ? "active" : ""}`;
+    btn.innerHTML = `
+      <span class="color-dot hero-list-dot" style="background-color: ${listColor}"></span>
+      <span>${escapeHtml(list.name)}</span>
+      ${isActive ? `<span class="hero-count-pill">${checkedCount}/${totalCount} ready</span>` : ""}
+    `;
+    btn.addEventListener("click", () => {
+      if (isRolling) return;
+      state.activeListId = list.id;
+      saveState();
+      renderAll();
+    });
+    containerEl.appendChild(btn);
+  });
+}
+
 function renderDecisionCard() {
   const cardEl = document.getElementById("decision-card");
   const idleEl = document.getElementById("decision-idle");
@@ -622,38 +785,10 @@ function renderDecisionCard() {
   const activeListColor = activeList.color || PALETTE[0];
   const checkedItems = activeList.items.filter((i) => i.checked);
 
-  const heroColor = state.activeDecision
-    ? getListColor(state.activeDecision.listId, state.activeDecision.color || PALETTE[0])
-    : activeListColor;
-  cardEl.style.setProperty("--hero-list-color", heroColor);
+  cardEl.style.setProperty("--hero-list-color", activeListColor);
 
-  const heroSwitcherEl = document.getElementById("hero-list-switcher");
-  if (heroSwitcherEl) {
-    heroSwitcherEl.innerHTML = "";
-    state.lists.forEach((list) => {
-      const isActive = list.id === activeList.id;
-      const listColor = list.color || PALETTE[0];
-      const checkedCount = list.items.filter((i) => i.checked).length;
-
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.role = "tab";
-      btn.ariaSelected = isActive ? "true" : "false";
-      btn.className = `hero-list-btn ${isActive ? "active" : ""}`;
-      btn.innerHTML = `
-        <span class="color-dot hero-list-dot" style="background-color: ${listColor}"></span>
-        <span>${escapeHtml(list.name)}</span>
-        ${isActive ? `<span class="hero-count-pill">${checkedCount} ready</span>` : ""}
-      `;
-      btn.addEventListener("click", () => {
-        if (isRolling) return;
-        state.activeListId = list.id;
-        saveState();
-        renderAll();
-      });
-      heroSwitcherEl.appendChild(btn);
-    });
-  }
+  renderHeroListSwitcherButtons(document.getElementById("hero-list-switcher"), activeList);
+  renderHeroListSwitcherButtons(document.getElementById("active-reroll-list-switcher"), activeList);
 
   const candidatePillsEl = document.getElementById("hero-candidate-pills");
   if (candidatePillsEl) {
@@ -672,9 +807,18 @@ function renderDecisionCard() {
   const decideBtn = document.getElementById("btn-decide");
   decideBtn.disabled = checkedItems.length === 0;
 
+  const rerollBtn = document.getElementById("btn-reroll");
+  if (rerollBtn) {
+    rerollBtn.disabled = checkedItems.length === 0 || Boolean(completingDecisionSnapshot);
+  }
+
+  const badgeChosenEl = activeEl.querySelector(".badge-chosen");
+  const completeChosenBtn = document.getElementById("btn-complete-chosen");
+
   if (isRolling) {
     cardEl.classList.add("is-rolling");
-    cardEl.classList.remove("has-active-choice");
+    cardEl.classList.remove("has-active-choice", "is-completing-win");
+    activeEl.classList.remove("is-win-hold", "is-win-exit");
     idleEl.classList.add("hidden");
     rollingEl.classList.remove("hidden");
     activeEl.classList.add("hidden");
@@ -683,21 +827,53 @@ function renderDecisionCard() {
 
   cardEl.classList.remove("is-rolling");
 
-  if (state.activeDecision) {
+  const displayDecision = state.activeDecision || completingDecisionSnapshot;
+
+  if (displayDecision) {
     cardEl.classList.add("has-active-choice");
     idleEl.classList.add("hidden");
     rollingEl.classList.add("hidden");
     activeEl.classList.remove("hidden");
 
-    const d = state.activeDecision;
-    document.getElementById("chosen-color-dot").style.backgroundColor = getListColor(
+    const d = displayDecision;
+    const chosenColor = getListColor(
       d.listId,
       d.color || PALETTE[0]
     );
+    cardEl.style.setProperty("--hero-list-color", chosenColor);
+    document.getElementById("chosen-color-dot").style.backgroundColor = chosenColor;
+    activeEl.style.setProperty("--chosen-color", chosenColor);
     document.getElementById("chosen-title").textContent = d.title;
     document.getElementById("chosen-list-subtitle").textContent = `From list: ${d.listName}`;
     document.getElementById("chosen-probability-meta").textContent =
       `${d.weight}x weight • ${d.probabilityPct}% chance (${d.candidateCount} checked)`;
+
+    if (completingDecisionSnapshot) {
+      cardEl.classList.add("is-completing-win");
+      activeEl.classList.add("is-win-hold");
+      activeEl.classList.toggle("is-win-exit", completingDecisionSnapshot.phase === "exit");
+      if (badgeChosenEl) {
+        badgeChosenEl.textContent = "✓ Completed & Logged!";
+        badgeChosenEl.classList.add("is-win-logged");
+      }
+      if (completeChosenBtn) {
+        completeChosenBtn.classList.add("is-win-hold");
+        if (!completeChosenBtn.querySelector(".win-check-svg")) {
+          completeChosenBtn.innerHTML = `<svg class="win-check-svg" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg> Logged!`;
+        }
+      }
+    } else {
+      cardEl.classList.remove("is-completing-win");
+      activeEl.classList.remove("is-win-hold", "is-win-exit");
+      if (badgeChosenEl) {
+        badgeChosenEl.textContent = "✨ Chosen Activity";
+        badgeChosenEl.classList.remove("is-win-logged");
+      }
+      if (completeChosenBtn) {
+        completeChosenBtn.classList.remove("is-win-hold");
+        completeChosenBtn.innerHTML = `✓ Mark Complete &amp; Log`;
+      }
+    }
 
     const rerollBadge = document.getElementById("active-reroll-badge");
     const sessionRerolls = Number(d.rerolls) || 0;
@@ -708,7 +884,16 @@ function renderDecisionCard() {
       rerollBadge.classList.add("hidden");
     }
   } else {
-    cardEl.classList.remove("has-active-choice");
+    cardEl.classList.remove("has-active-choice", "is-completing-win");
+    activeEl.classList.remove("is-win-hold", "is-win-exit");
+    if (badgeChosenEl) {
+      badgeChosenEl.textContent = "✨ Chosen Activity";
+      badgeChosenEl.classList.remove("is-win-logged");
+    }
+    if (completeChosenBtn) {
+      completeChosenBtn.classList.remove("is-win-hold");
+      completeChosenBtn.innerHTML = `✓ Mark Complete &amp; Log`;
+    }
     idleEl.classList.remove("hidden");
     rollingEl.classList.add("hidden");
     activeEl.classList.add("hidden");
@@ -772,7 +957,7 @@ function renderActivityPool() {
         />
         <div class="activity-title-group">
           <span class="activity-title" title="Click to toggle">${escapeHtml(item.title)}</span>
-          ${doneToday ? `<span class="done-today-pill">✓ Done today</span>` : ""}
+          ${doneToday ? `<span class="done-today-pill" title="Completed today" aria-label="Completed today">✓</span>` : ""}
         </div>
       </div>
       <div class="activity-right">
@@ -890,8 +1075,9 @@ function renderActivityPool() {
     });
 
     // Direct log to today (also unchecks it for today)
-    li.querySelector(".log-direct-btn").addEventListener("click", () => {
-      logActivityCompletion(item, activeList, getLogicalTodayStr());
+    const logDirectBtn = li.querySelector(".log-direct-btn");
+    logDirectBtn.addEventListener("click", () => {
+      logActivityCompletion(item, activeList, getLogicalTodayStr(), logDirectBtn);
     });
 
     // Edit activity title with Pop-up Modal
@@ -963,29 +1149,40 @@ function renderDailyTasks() {
     li.innerHTML = `
       <div class="daily-task-left">
         <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
-        <input
-          type="checkbox"
-          class="daily-task-checkbox"
-          ${task.doneToday ? "checked" : ""}
-          aria-label="Mark ${escapeHtml(task.title)} as done today"
-        />
-        <span class="daily-task-title">${escapeHtml(task.title)}</span>
+        <div class="activity-title-group">
+          <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
+          ${task.doneToday ? `<span class="done-today-pill" title="Completed today" aria-label="Completed today">✓</span>` : ""}
+        </div>
       </div>
       <div class="daily-task-actions">
+        <button
+          type="button"
+          class="btn-icon log-daily-btn ${task.doneToday ? "is-done" : ""}"
+          title="${task.doneToday ? `Unmark '${escapeHtml(task.title)}' as done today` : `Mark '${escapeHtml(task.title)}' as completed today`}"
+          aria-pressed="${task.doneToday ? "true" : "false"}"
+        >
+          ✓
+        </button>
         <button type="button" class="btn-icon edit-daily-btn" title="Rename daily task">${ICON_EDIT_SVG}</button>
         <button type="button" class="btn-icon danger delete-daily-btn" title="Delete daily task">${ICON_TRASH_SVG}</button>
       </div>
     `;
 
     // Toggle doneToday
-    const toggleDone = () => {
+    const toggleDone = (e) => {
       checkAndPerformDailyReset(false);
+      const prevStats = getStatsSnapshot();
       task.doneToday = !task.doneToday;
+      if (task.doneToday) {
+        spawnConfettiBurst(e && e.currentTarget ? e.currentTarget : li, "#eab308");
+      }
       evaluateTodayDailyStar(true);
       saveState();
       renderAll();
+      animateStatBumps(prevStats);
+      announceFreezeIfEarned(prevStats.availableFreezes);
     };
-    li.querySelector(".daily-task-checkbox").addEventListener("change", toggleDone);
+    li.querySelector(".log-daily-btn").addEventListener("click", toggleDone);
     li.querySelector(".daily-task-title").addEventListener("click", toggleDone);
 
     // Drag and Drop reordering for Daily Tasks
@@ -1163,8 +1360,165 @@ function buildRollTickSequence(pool, chosen, totalTicks) {
   return sequence;
 }
 
+function clearCompletingDecisionHold() {
+  if (completingDecisionTimers.length > 0) {
+    completingDecisionTimers.forEach((t) => clearTimeout(t));
+    completingDecisionTimers = [];
+  }
+  completingDecisionSnapshot = null;
+}
+
+function prefersReducedMotion() {
+  return Boolean(
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/**
+ * Pulses the Hero Decision Card with the chosen list's color when a winner is locked in.
+ */
+function triggerWinnerAura(listColor) {
+  if (prefersReducedMotion()) return;
+  const cardEl = document.getElementById("decision-card");
+  if (!cardEl) return;
+
+  if (winnerAuraTimer) {
+    clearTimeout(winnerAuraTimer);
+    winnerAuraTimer = null;
+  }
+
+  if (listColor) {
+    cardEl.style.setProperty("--hero-list-color", listColor);
+  }
+  cardEl.classList.remove("winner-aura-pulse");
+  void cardEl.offsetWidth;
+  cardEl.classList.add("winner-aura-pulse");
+
+  winnerAuraTimer = setTimeout(() => {
+    cardEl.classList.remove("winner-aura-pulse");
+    winnerAuraTimer = null;
+  }, 1650);
+}
+
+/**
+ * Spawns a lightweight DOM confetti / particle burst from the given trigger element.
+ */
+function spawnConfettiBurst(originEl, listColor) {
+  if (prefersReducedMotion()) return;
+
+  const targetEl = originEl || document.getElementById("btn-complete-chosen") || document.getElementById("decision-card");
+  let cx = window.innerWidth / 2;
+  let cy = window.innerHeight / 3;
+  if (targetEl && typeof targetEl.getBoundingClientRect === "function") {
+    const rect = targetEl.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) {
+      cx = rect.left + rect.width / 2;
+      cy = rect.top + rect.height / 2;
+    }
+  }
+
+  const colors = [
+    listColor || PALETTE[0],
+    "#10b981", // --success
+    "#eab308", // --star-gold
+    "#6366f1", // --accent-primary
+    "#38bdf8", // --freeze-cyan
+    "#f43f5e"
+  ];
+
+  const layer = document.createElement("div");
+  layer.className = "confetti-burst-layer";
+  layer.setAttribute("aria-hidden", "true");
+
+  const particleCount = 24;
+  for (let i = 0; i < particleCount; i++) {
+    const piece = document.createElement("span");
+    piece.className = "confetti-piece";
+
+    const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.35;
+    const distance = 48 + Math.random() * 78;
+    const dx = Math.round(Math.cos(angle) * distance);
+    const dy = Math.round(Math.sin(angle) * distance - 18);
+    const rot = Math.round((Math.random() - 0.5) * 520);
+    const isCircle = i % 3 === 0;
+    const w = isCircle ? 7 : 6 + Math.round(Math.random() * 5);
+    const h = isCircle ? 7 : 4 + Math.round(Math.random() * 4);
+    const dur = 1050 + Math.round(Math.random() * 400);
+    const delay = Math.round(Math.random() * 90);
+    const color = colors[i % colors.length];
+
+    piece.style.setProperty("--x", `${cx}px`);
+    piece.style.setProperty("--y", `${cy}px`);
+    piece.style.setProperty("--dx", `${dx}px`);
+    piece.style.setProperty("--dy", `${dy}px`);
+    piece.style.setProperty("--rot", `${rot}deg`);
+    piece.style.setProperty("--w", `${w}px`);
+    piece.style.setProperty("--h", `${h}px`);
+    piece.style.setProperty("--r", isCircle ? "50%" : "2px");
+    piece.style.setProperty("--c", color);
+    piece.style.setProperty("--dur", `${dur}ms`);
+    piece.style.setProperty("--delay", `${delay}ms`);
+
+    layer.appendChild(piece);
+  }
+
+  document.body.appendChild(layer);
+  setTimeout(() => {
+    layer.remove();
+  }, 1600);
+}
+
+/**
+ * Snapshot current header stats so we can pop whichever pills increased.
+ */
+function getStatsSnapshot() {
+  const { currentStreak, availableFreezes } = computeStreakAndFreezes();
+  const todayStr = getLogicalTodayStr();
+  const sevenDaysAgo = getLogicalTodayDate();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = toLocalDateStr(sevenDaysAgo);
+  const weekCount = state.logs.filter((l) => l.date >= sevenDaysAgoStr && l.date <= todayStr).length;
+
+  const viewedMonthPrefix = `${calYear}-${String(calMonth + 1).padStart(2, "0")}`;
+  const monthCount = state.logs.filter((l) => l.date.startsWith(viewedMonthPrefix)).length;
+
+  return { currentStreak, availableFreezes, weekCount, monthCount };
+}
+
+function triggerStatPillBump(valueElId, bumpClass) {
+  if (prefersReducedMotion()) return;
+  const el = document.getElementById(valueElId);
+  if (!el) return;
+  const pillEl = el.closest(".stat-pill") || el;
+  pillEl.classList.remove("stat-bump-success", "stat-bump-streak", "stat-bump-freeze");
+  void pillEl.offsetWidth;
+  pillEl.classList.add(bumpClass);
+  setTimeout(() => {
+    pillEl.classList.remove(bumpClass);
+  }, 1300);
+}
+
+function animateStatBumps(prevStats) {
+  if (!prevStats || prefersReducedMotion()) return;
+  const nextStats = getStatsSnapshot();
+
+  if (nextStats.currentStreak > prevStats.currentStreak) {
+    triggerStatPillBump("stat-current-streak", "stat-bump-streak");
+  }
+  if (nextStats.availableFreezes > prevStats.availableFreezes) {
+    triggerStatPillBump("stat-pill-freezes", "stat-bump-freeze");
+  }
+  if (nextStats.weekCount > prevStats.weekCount) {
+    triggerStatPillBump("stat-week-count", "stat-bump-success");
+  }
+  if (nextStats.monthCount > prevStats.monthCount) {
+    triggerStatPillBump("stat-month-count", "stat-bump-success");
+  }
+}
+
 function triggerDecisionRoll(isReroll = false) {
   if (isRolling) return;
+  clearCompletingDecisionHold();
   checkAndPerformDailyReset(false);
 
   const activeList = getActiveList();
@@ -1194,12 +1548,13 @@ function triggerDecisionRoll(isReroll = false) {
   const { item: chosen } = pickWeightedItem(candidates);
   const chosenWeight = normalizeWeight(chosen.weight);
   const probabilityPct = Math.round((chosenWeight / totalWeightAllChecked) * 100);
+  const chosenListColor = activeList.color || PALETTE[0];
   const decisionPayload = {
     itemId: chosen.id,
     listId: activeList.id,
     listName: activeList.name,
     title: chosen.title,
-    color: activeList.color || PALETTE[0],
+    color: chosenListColor,
     weight: chosenWeight,
     probabilityPct,
     candidateCount: allCheckedCount,
@@ -1210,6 +1565,7 @@ function triggerDecisionRoll(isReroll = false) {
     state.activeDecision = decisionPayload;
     saveState();
     renderAll();
+    triggerWinnerAura(chosenListColor);
     return;
   }
 
@@ -1240,7 +1596,8 @@ function triggerDecisionRoll(isReroll = false) {
         state.activeDecision = decisionPayload;
         saveState();
         renderAll();
-      }, rollDelays[stepIndex]);
+        triggerWinnerAura(chosenListColor);
+      }, Math.max(rollDelays[stepIndex], 480));
       return;
     }
 
@@ -1254,9 +1611,11 @@ function triggerDecisionRoll(isReroll = false) {
  * Log Activity Completion to Calendar.
  * When marked as completed today (logical today), automatically unchecks the activity for the day.
  */
-function logActivityCompletion(item, list, dateStr = getLogicalTodayStr()) {
+function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), originEl = null) {
   checkAndPerformDailyReset(false);
   const todayStr = getLogicalTodayStr();
+  const prevStats = getStatsSnapshot();
+  const resolvedColor = list.color || PALETTE[0];
 
   const newLog = {
     id: uid("log"),
@@ -1266,10 +1625,15 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr()) {
     itemTitle: item.title,
     listId: list.id,
     listName: list.name,
-    color: list.color || PALETTE[0]
+    color: resolvedColor
   };
 
   state.logs.push(newLog);
+
+  const isCompletingActiveHero =
+    dateStr === todayStr &&
+    state.activeDecision &&
+    state.activeDecision.itemId === item.id;
 
   // If completed for today, automatically uncheck it for the rest of the day (until 3am reset)
   if (dateStr === todayStr) {
@@ -1280,7 +1644,27 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr()) {
         }
       });
     });
-    if (state.activeDecision && state.activeDecision.itemId === item.id) {
+
+    if (isCompletingActiveHero) {
+      if (!prefersReducedMotion()) {
+        clearCompletingDecisionHold();
+        completingDecisionSnapshot = {
+          ...state.activeDecision,
+          phase: "hold"
+        };
+        const exitTimer = setTimeout(() => {
+          if (completingDecisionSnapshot) {
+            completingDecisionSnapshot.phase = "exit";
+            renderDecisionCard();
+          }
+        }, 750);
+        const doneTimer = setTimeout(() => {
+          completingDecisionSnapshot = null;
+          completingDecisionTimers = [];
+          renderDecisionCard();
+        }, 1200);
+        completingDecisionTimers.push(exitTimer, doneTimer);
+      }
       state.activeDecision = null;
     }
   }
@@ -1292,8 +1676,11 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr()) {
   calMonth = m - 1;
 
   saveState();
+  spawnConfettiBurst(originEl, resolvedColor);
   renderAll();
+  animateStatBumps(prevStats);
   showToast(`Completed "${item.title}"! 🎉`);
+  announceFreezeIfEarned(prevStats.availableFreezes);
 }
 
 // Helper: Get Monday of the week containing dateObj
@@ -1304,7 +1691,33 @@ function getMondayOfWeek(dateObj) {
   return d;
 }
 
-// Render Calendar (Supports Monthly Grid, 7-Row Weekly Agenda, Re-roll Counter & Daily Star Badge)
+// Helper: Get adjacent YYYY-MM-DD date string (-1 for yesterday, +1 for tomorrow)
+function getAdjacentDateStr(dateStr, offsetDays) {
+  const d = parseLocalDateStr(dateStr);
+  d.setDate(d.getDate() + offsetDays);
+  return toLocalDateStr(d);
+}
+
+// Helper: Select a date and immediately open the Quick-Log Drawer for it
+function openQuickLogForDate(dateStr, cellYear, cellMonth) {
+  selectedDateStr = dateStr;
+  if (typeof cellYear === "number" && typeof cellMonth === "number") {
+    calYear = cellYear;
+    calMonth = cellMonth;
+  } else {
+    const d = parseLocalDateStr(dateStr);
+    calYear = d.getFullYear();
+    calMonth = d.getMonth();
+  }
+  renderAll();
+  const quickLogDrawer = document.getElementById("quick-log-drawer");
+  if (quickLogDrawer) {
+    quickLogDrawer.classList.remove("hidden");
+    quickLogDrawer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+// Render Calendar (Supports Monthly Grid, 7-Row Weekly Agenda, Streak Chain, Quick-Log & Daily Notes)
 function renderCalendar() {
   hideCalendarTooltip();
 
@@ -1330,6 +1743,12 @@ function renderCalendar() {
   const todayStr = getLogicalTodayStr();
   const titleEl = document.getElementById("calendar-period-title");
   const rerollSummaryEl = document.getElementById("calendar-reroll-summary");
+  const {
+    frozenDates,
+    qualifyingSet,
+    streakChainSet,
+    streakDayNumByDate
+  } = computeStreakAndFreezes();
 
   if (isWeekView) {
     const selectedObj = parseLocalDateStr(selectedDateStr);
@@ -1351,6 +1770,13 @@ function renderCalendar() {
       const dayLogs = logsByDate.get(dateStr) || [];
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
       const hasStar = Boolean(state.dailyStarsByDate[dateStr]);
+      const isFrozen = frozenDates.has(dateStr);
+      const isStreakDay = qualifyingSet.has(dateStr);
+      const isChainNode = streakChainSet.has(dateStr);
+      const chainPrev = isChainNode && i > 0 && streakChainSet.has(getAdjacentDateStr(dateStr, -1));
+      const chainNext = isChainNode && i < 6 && streakChainSet.has(getAdjacentDateStr(dateStr, 1));
+      const dayNote = (state.dailyNotesByDate && state.dailyNotesByDate[dateStr]) || "";
+      const streakDayNum = streakDayNumByDate.get(dateStr) || 0;
       weekRerollTotal += dayRerolls;
 
       const isToday = dateStr === todayStr;
@@ -1360,6 +1786,10 @@ function renderCalendar() {
       row.className = [
         "week-day-row",
         dayLogs.length > 0 ? "has-logs" : "",
+        isStreakDay ? "is-streak-day" : "",
+        isFrozen ? "is-frozen" : "",
+        chainPrev ? "chain-prev" : "",
+        chainNext ? "chain-next" : "",
         isToday ? "is-today" : "",
         isSelected ? "is-selected" : ""
       ]
@@ -1385,10 +1815,15 @@ function renderCalendar() {
                       `<span class="week-activity-chip" style="border-left-color: ${getListColor(l.listId, l.color || PALETTE[0])}">${escapeHtml(l.itemTitle)}</span>`
                   )
                   .join("")
-              : `<span class="week-empty-label">No completed activities</span>`
+              : isFrozen
+                ? `<span class="week-empty-label">❄️ Streak protected by Streak Freeze</span>`
+                : `<span class="week-empty-label">No completed activities</span>`
           }
+          ${dayNote ? `<div class="week-day-note"><span aria-hidden="true">📝</span> <span>${escapeHtml(dayNote)}</span></div>` : ""}
         </div>
         <div class="week-day-right">
+          ${isStreakDay && streakDayNum > 0 ? `<span class="cal-done-tag" title="Qualifying Streak Day #${streakDayNum}">🔥 Day ${streakDayNum}</span>` : ""}
+          ${isFrozen ? `<span class="cal-freeze-tag" title="Streak Freeze automatically used on ${dateStr}">❄️ Freeze</span>` : ""}
           ${hasStar ? `<span class="cal-star-tag" title="All Daily Tasks completed on ${dateStr}">⭐</span>` : ""}
           ${dayRerolls > 0 ? `<span class="cal-reroll-tag" title="${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}">🎲 ${dayRerolls}</span>` : ""}
         </div>
@@ -1399,6 +1834,10 @@ function renderCalendar() {
         calYear = cellDate.getFullYear();
         calMonth = cellDate.getMonth();
         renderAll();
+      });
+
+      row.addEventListener("dblclick", () => {
+        openQuickLogForDate(dateStr, cellDate.getFullYear(), cellDate.getMonth());
       });
 
       gridEl.appendChild(row);
@@ -1451,6 +1890,18 @@ function renderCalendar() {
       const dayLogs = logsByDate.get(dateStr) || [];
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
       const hasStar = Boolean(state.dailyStarsByDate[dateStr]);
+      const isFrozen = frozenDates.has(dateStr);
+      const isStreakDay = qualifyingSet.has(dateStr);
+      const isChainNode = streakChainSet.has(dateStr);
+      const colIndex = i % 7;
+      const prevDateStr = getAdjacentDateStr(dateStr, -1);
+      const nextDateStr = getAdjacentDateStr(dateStr, 1);
+      const chainLeft = isChainNode && colIndex > 0 && streakChainSet.has(prevDateStr);
+      const chainRight = isChainNode && colIndex < 6 && streakChainSet.has(nextDateStr);
+      const chainLeftIsFrozen = chainLeft && (isFrozen || frozenDates.has(prevDateStr));
+      const chainRightIsFrozen = chainRight && (isFrozen || frozenDates.has(nextDateStr));
+      const dayNote = (state.dailyNotesByDate && state.dailyNotesByDate[dateStr]) || "";
+      const streakDayNum = streakDayNumByDate.get(dateStr) || 0;
 
       const cell = createMonthlyDayCell({
         dayNum,
@@ -1458,6 +1909,14 @@ function renderCalendar() {
         dayLogs,
         dayRerolls,
         hasStar,
+        isFrozen,
+        isStreakDay,
+        chainLeft,
+        chainRight,
+        chainLeftIsFrozen,
+        chainRightIsFrozen,
+        dayNote,
+        streakDayNum,
         isOtherMonth,
         isToday: dateStr === todayStr,
         isSelected: dateStr === selectedDateStr,
@@ -1479,6 +1938,14 @@ function createMonthlyDayCell({
   dayLogs,
   dayRerolls,
   hasStar,
+  isFrozen,
+  isStreakDay,
+  chainLeft,
+  chainRight,
+  chainLeftIsFrozen,
+  chainRightIsFrozen,
+  dayNote,
+  streakDayNum,
   isOtherMonth,
   isToday,
   isSelected,
@@ -1490,6 +1957,12 @@ function createMonthlyDayCell({
   cell.className = [
     "cal-day",
     dayLogs.length > 0 ? "has-logs" : "",
+    isStreakDay ? "is-streak-day" : "",
+    isFrozen ? "is-frozen" : "",
+    chainLeft ? "chain-left" : "",
+    chainRight ? "chain-right" : "",
+    chainLeftIsFrozen ? "chain-left-frozen" : "",
+    chainRightIsFrozen ? "chain-right-frozen" : "",
     isOtherMonth ? "other-month" : "",
     isToday ? "is-today" : "",
     isSelected ? "is-selected" : ""
@@ -1505,6 +1978,8 @@ function createMonthlyDayCell({
     <div class="cal-day-header">
       <span class="cal-day-num">${dayNum}</span>
       <span class="cal-day-badges">
+        ${dayNote ? `<span class="cal-note-inline" aria-label="Daily note">📝</span>` : ""}
+        ${isFrozen ? `<span class="cal-freeze-inline" aria-label="Streak Freeze used">❄️</span>` : ""}
         ${hasStar ? `<span class="cal-star-inline" aria-label="Daily Tasks completed">★</span>` : ""}
         ${dayRerolls > 0 ? `<span class="cal-reroll-inline">🎲${dayRerolls}</span>` : ""}
       </span>
@@ -1512,10 +1987,33 @@ function createMonthlyDayCell({
     <div class="cal-pills"></div>
   `;
 
-  // Hover tooltip for the Star indicator
+  // Hover tooltip for the Daily Note indicator
+  const noteEl = cell.querySelector(".cal-note-inline");
+  if (noteEl && dayNote) {
+    const noteTooltipHtml = `
+      <div class="tooltip-header">Daily Note (${escapeHtml(dateStr)})</div>
+      <div class="tooltip-item"><span>📝</span><span>${escapeHtml(dayNote)}</span></div>
+    `;
+    noteEl.addEventListener("mouseenter", (e) => showCalendarTooltip(noteTooltipHtml, e));
+    noteEl.addEventListener("mousemove", (e) => positionCalendarTooltip(e));
+    noteEl.addEventListener("mouseleave", hideCalendarTooltip);
+  }
+
+  // Hover tooltip for the Streak Freeze indicator
+  const freezeEl = cell.querySelector(".cal-freeze-inline");
+  if (freezeEl) {
+    const freezeTooltipHtml = `<div class="tooltip-item"><span>❄️</span><span>Streak Freeze used — streak protected on ${escapeHtml(dateStr)}!</span></div>`;
+    freezeEl.addEventListener("mouseenter", (e) => showCalendarTooltip(freezeTooltipHtml, e));
+    freezeEl.addEventListener("mousemove", (e) => positionCalendarTooltip(e));
+    freezeEl.addEventListener("mouseleave", hideCalendarTooltip);
+  }
+
+  // Hover tooltip for the Star indicator (also mentions streak day # if qualifying)
   const starEl = cell.querySelector(".cal-star-inline");
   if (starEl) {
-    const starTooltipHtml = `<div class="tooltip-item"><span>⭐</span><span>All Daily Tasks completed on ${escapeHtml(dateStr)}!</span></div>`;
+    const streakSuffix =
+      isStreakDay && streakDayNum > 0 ? ` (🔥 Streak Day ${streakDayNum})` : "";
+    const starTooltipHtml = `<div class="tooltip-item"><span>⭐</span><span>All Daily Tasks completed on ${escapeHtml(dateStr)}${escapeHtml(streakSuffix)}!</span></div>`;
     starEl.addEventListener("mouseenter", (e) => showCalendarTooltip(starTooltipHtml, e));
     starEl.addEventListener("mousemove", (e) => positionCalendarTooltip(e));
     starEl.addEventListener("mouseleave", hideCalendarTooltip);
@@ -1596,6 +2094,10 @@ function createMonthlyDayCell({
     renderAll();
   });
 
+  cell.addEventListener("dblclick", () => {
+    openQuickLogForDate(dateStr, cellYear, cellMonth);
+  });
+
   return cell;
 }
 
@@ -1630,6 +2132,28 @@ function renderDayInspector() {
   const starBadgeEl = document.getElementById("inspector-star-badge");
   if (starBadgeEl) {
     starBadgeEl.classList.toggle("hidden", !hasStar);
+  }
+
+  // Freeze badge if a Streak Freeze was automatically consumed on this date
+  const { frozenDates } = computeStreakAndFreezes();
+  const isFrozen = frozenDates.has(selectedDateStr);
+  const freezeBadgeEl = document.getElementById("inspector-freeze-badge");
+  if (freezeBadgeEl) {
+    freezeBadgeEl.classList.toggle("hidden", !isFrozen);
+  }
+
+  // Daily Note / Highlight input for the selected date
+  if (!state.dailyNotesByDate || typeof state.dailyNotesByDate !== "object") {
+    state.dailyNotesByDate = {};
+  }
+  const currentNote = state.dailyNotesByDate[selectedDateStr] || "";
+  const noteInputEl = document.getElementById("input-daily-note");
+  const clearNoteBtnEl = document.getElementById("btn-clear-daily-note");
+  if (noteInputEl && document.activeElement !== noteInputEl) {
+    noteInputEl.value = currentNote;
+  }
+  if (clearNoteBtnEl) {
+    clearNoteBtnEl.classList.toggle("hidden", !currentNote);
   }
 
   const listEl = document.getElementById("day-log-list");
@@ -1721,7 +2245,7 @@ function renderDayInspector() {
         <span class="quick-log-chip-plus">+</span>
       `;
       chip.addEventListener("click", () => {
-        logActivityCompletion(item, list, selectedDateStr);
+        logActivityCompletion(item, list, selectedDateStr, chip);
       });
       chipsEl.appendChild(chip);
     });
@@ -1732,46 +2256,16 @@ function renderDayInspector() {
   }
 }
 
-// Compute Streaks, Weekly/Monthly Stats & Top Activities
+// Compute Streaks, Streak Freezes, Weekly/Monthly Stats & Top Activities
 function renderStatsAndInsights() {
-  // A day counts toward the streak only when at least 1 activity is completed
-  // AND all Daily Tasks are completed for that day (earning the ⭐ Daily Star).
-  const requireDailyStar = state.dailyTasks.length > 0;
-  const uniqueDates = Array.from(
-    new Set(
-      state.logs
-        .map((l) => l.date)
-        .filter((dStr) => !requireDailyStar || Boolean(state.dailyStarsByDate[dStr]))
-    )
-  ).sort();
-  const dateSet = new Set(uniqueDates);
+  const {
+    currentStreak,
+    bestStreak,
+    availableFreezes,
+    consecutiveActive
+  } = computeStreakAndFreezes();
 
-  let currentStreak = 0;
-  const cursor = getLogicalTodayDate();
-  const todayStr = toLocalDateStr(cursor);
-  if (!dateSet.has(todayStr)) {
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  while (dateSet.has(toLocalDateStr(cursor))) {
-    currentStreak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-
-  let bestStreak = 0;
-  let running = 0;
-  let prevDateObj = null;
-  uniqueDates.forEach((dStr) => {
-    const currObj = parseLocalDateStr(dStr);
-    if (prevDateObj) {
-      const diffDays = Math.round((currObj - prevDateObj) / (1000 * 60 * 60 * 24));
-      running = diffDays === 1 ? running + 1 : 1;
-    } else {
-      running = 1;
-    }
-    if (running > bestStreak) bestStreak = running;
-    prevDateObj = currObj;
-  });
-
+  const todayStr = getLogicalTodayStr();
   const sevenDaysAgo = getLogicalTodayDate();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const sevenDaysAgoStr = toLocalDateStr(sevenDaysAgo);
@@ -1782,6 +2276,19 @@ function renderStatsAndInsights() {
 
   document.getElementById("stat-current-streak").textContent = `${currentStreak}d`;
   document.getElementById("stat-best-streak").textContent = `(Best: ${bestStreak}d)`;
+
+  const freezeCountEl = document.getElementById("stat-freeze-count");
+  const freezeSubEl = document.getElementById("stat-freeze-sub");
+  if (freezeCountEl) {
+    freezeCountEl.textContent = `${availableFreezes}/${MAX_STREAK_FREEZES}`;
+  }
+  if (freezeSubEl) {
+    freezeSubEl.textContent =
+      availableFreezes >= MAX_STREAK_FREEZES
+        ? "(Maxed!)"
+        : `(${consecutiveActive}/${STREAK_FREEZE_INTERVAL}d to +1)`;
+  }
+
   document.getElementById("stat-week-count").textContent = String(weekCount);
   document.getElementById("stat-month-count").textContent = String(monthCount);
   document.getElementById("total-alltime-count").textContent = `${state.logs.length} total`;
@@ -1858,18 +2365,16 @@ function initEvents() {
   document.getElementById("btn-decide").addEventListener("click", () => triggerDecisionRoll(false));
   document.getElementById("btn-reroll").addEventListener("click", () => triggerDecisionRoll(true));
 
-  document.getElementById("btn-complete-chosen").addEventListener("click", () => {
-    if (!state.activeDecision) return;
+  document.getElementById("btn-complete-chosen").addEventListener("click", (e) => {
+    if (!state.activeDecision || completingDecisionSnapshot) return;
     const d = state.activeDecision;
     const listColor = getListColor(d.listId, d.color || PALETTE[0]);
     logActivityCompletion(
       { id: d.itemId, title: d.title },
       { id: d.listId, name: d.listName, color: listColor },
-      getLogicalTodayStr()
+      getLogicalTodayStr(),
+      e.currentTarget
     );
-    state.activeDecision = null;
-    saveState();
-    renderAll();
   });
 
   // Confirmation Pop-up Modal Actions
@@ -1948,6 +2453,55 @@ function initEvents() {
   closeQuickLogBtn.addEventListener("click", () => {
     quickLogDrawer.classList.add("hidden");
   });
+
+  // Daily Note / Highlight Form & Clear button
+  const dailyNoteForm = document.getElementById("form-daily-note");
+  const dailyNoteInput = document.getElementById("input-daily-note");
+  const clearDailyNoteBtn = document.getElementById("btn-clear-daily-note");
+
+  const saveDailyNoteForSelectedDate = (showNotification = true) => {
+    if (!dailyNoteInput) return;
+    if (!state.dailyNotesByDate || typeof state.dailyNotesByDate !== "object") {
+      state.dailyNotesByDate = {};
+    }
+    const trimmed = dailyNoteInput.value.trim();
+    const prev = state.dailyNotesByDate[selectedDateStr] || "";
+    if (trimmed) {
+      state.dailyNotesByDate[selectedDateStr] = trimmed;
+      saveState();
+      renderAll();
+      if (showNotification && trimmed !== prev) {
+        showToast(`📝 Saved note for ${selectedDateStr}`);
+      }
+    } else if (prev) {
+      delete state.dailyNotesByDate[selectedDateStr];
+      saveState();
+      renderAll();
+      if (showNotification) {
+        showToast(`Removed note for ${selectedDateStr}`);
+      }
+    }
+  };
+
+  if (dailyNoteForm) {
+    dailyNoteForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveDailyNoteForSelectedDate(true);
+      if (dailyNoteInput) dailyNoteInput.blur();
+    });
+  }
+
+  if (clearDailyNoteBtn) {
+    clearDailyNoteBtn.addEventListener("click", () => {
+      if (dailyNoteInput) dailyNoteInput.value = "";
+      if (state.dailyNotesByDate && state.dailyNotesByDate[selectedDateStr]) {
+        delete state.dailyNotesByDate[selectedDateStr];
+        saveState();
+        renderAll();
+        showToast(`Cleared note for ${selectedDateStr}`);
+      }
+    });
+  }
 
   // Input / Rename Pop-up Modal (Create List, Rename List, Rename Activity, Rename Daily Task)
   const listNameInput = document.getElementById("input-list-name");
@@ -2135,6 +2689,10 @@ function initEvents() {
             imported.dailyStarsByDate && typeof imported.dailyStarsByDate === "object"
               ? imported.dailyStarsByDate
               : {},
+          dailyNotesByDate:
+            imported.dailyNotesByDate && typeof imported.dailyNotesByDate === "object"
+              ? imported.dailyNotesByDate
+              : {},
           lists: imported.lists,
           logs: Array.isArray(imported.logs) ? imported.logs : []
         };
@@ -2153,7 +2711,7 @@ function initEvents() {
   });
 
   // Delete Local Data & Reset to Defaults
-  document.getElementById("btn-reset-data").addEventListener("click", () => {
+  const handleResetData = () => {
     openConfirmModal(
       "Delete Local Data & Reset",
       "Are you sure you want to delete all local data (custom lists, calendar history, re-rolls, and daily stars) and restore default settings?",
@@ -2169,7 +2727,13 @@ function initEvents() {
         showToast("Local data deleted — all settings and defaults refreshed!");
       }
     );
-  });
+  };
+
+  document.getElementById("btn-reset-data").addEventListener("click", handleResetData);
+  const footerResetBtn = document.getElementById("btn-reset-data-footer");
+  if (footerResetBtn) {
+    footerResetBtn.addEventListener("click", handleResetData);
+  }
 
   // Watch for 3:00 AM daily rollover while tab is open or refocused
   window.addEventListener("focus", () => checkAndPerformDailyReset(true));
