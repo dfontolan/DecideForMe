@@ -403,18 +403,24 @@ function announceFreezeIfEarned(prevFreezes) {
 
 /**
  * Evaluates whether all Daily Tasks are done for today.
- * If all are done (and at least 1 exists), awards today's Star Badge on the calendar.
+ * - All Daily Tasks done (0 activities) -> Silver Star on calendar (does not count towards streak)
+ * - All Daily Tasks done + 1+ Activity logged -> Gold Star on calendar (counts towards streak)
  */
 function evaluateTodayDailyStar(announceIfEarned = false) {
   const todayStr = getLogicalTodayStr();
-  const hadStar = Boolean(state.dailyStarsByDate[todayStr]);
-  const allDone =
+  const hadDailyTasksDone = Boolean(state.dailyStarsByDate[todayStr]);
+  const allDailyTasksDone =
     state.dailyTasks.length > 0 && state.dailyTasks.every((t) => Boolean(t.doneToday));
+  const hasActivityLoggedToday = state.logs.some((l) => l.date === todayStr);
 
-  if (allDone) {
+  if (allDailyTasksDone) {
     state.dailyStarsByDate[todayStr] = true;
-    if (!hadStar && announceIfEarned) {
-      showToast("⭐ All Daily Tasks completed! Star badge added to today's calendar!");
+    if (!hadDailyTasksDone && announceIfEarned) {
+      if (hasActivityLoggedToday) {
+        showToast("⭐ Gold Daily Star earned! All Daily Tasks + Activity completed today!");
+      } else {
+        showToast("★ Silver Star earned! Complete an activity today to upgrade to a Gold Star & streak!");
+      }
     }
   } else {
     delete state.dailyStarsByDate[todayStr];
@@ -1162,10 +1168,21 @@ function renderDailyTasks() {
   const total = state.dailyTasks.length;
   const doneCount = state.dailyTasks.filter((t) => t.doneToday).length;
   const allDone = total > 0 && doneCount === total;
+  const todayStr = getLogicalTodayStr();
+  const hasActivityToday = state.logs.some((l) => l.date === todayStr);
+  const hasGoldStarToday = allDone && hasActivityToday;
+  const hasSilverStarToday = allDone && !hasActivityToday;
 
-  cardEl.classList.toggle("all-done", allDone);
-  progressBadgeEl.textContent = allDone ? `⭐ ${doneCount}/${total} done` : `${doneCount}/${total} done`;
-  progressBadgeEl.classList.toggle("badge-star", allDone);
+  cardEl.classList.toggle("all-done", hasGoldStarToday);
+  cardEl.classList.toggle("silver-done", hasSilverStarToday);
+  progressBadgeEl.textContent = hasGoldStarToday
+    ? `★ ${doneCount}/${total} done`
+    : hasSilverStarToday
+      ? `★ ${doneCount}/${total} done`
+      : `${doneCount}/${total} done`;
+  progressBadgeEl.classList.toggle("badge-star", hasGoldStarToday);
+  progressBadgeEl.classList.toggle("badge-star-silver", hasSilverStarToday);
+  progressBadgeEl.classList.remove("badge-success");
 
   if (total === 0) {
     listEl.innerHTML = `<li class="empty-state">Add your daily habits above to start earning ⭐ Star Badges!</li>`;
@@ -1701,11 +1718,24 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), origi
   calYear = y;
   calMonth = m - 1;
 
+  const wasSilverToday =
+    dateStr === todayStr &&
+    Boolean(state.dailyStarsByDate[todayStr]) &&
+    state.logs.filter((l) => l.date === todayStr).length === 1;
+
+  if (dateStr === todayStr) {
+    evaluateTodayDailyStar(false);
+  }
+
   saveState();
   spawnConfettiBurst(originEl, resolvedColor);
   renderAll();
   animateStatBumps(prevStats);
-  showToast(`Completed "${item.title}"! 🎉`);
+  if (wasSilverToday) {
+    showToast(`Completed "${item.title}"! ★ Upgraded to Gold Daily Star!`);
+  } else {
+    showToast(`Completed "${item.title}"! 🎉`);
+  }
   announceFreezeIfEarned(prevStats.availableFreezes);
 }
 
@@ -1795,7 +1825,9 @@ function renderCalendar() {
       const dateStr = toLocalDateStr(cellDate);
       const dayLogs = logsByDate.get(dateStr) || [];
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
-      const hasStar = Boolean(state.dailyStarsByDate[dateStr]);
+      const hasDailyTasksDone = Boolean(state.dailyStarsByDate[dateStr]);
+      const hasGoldStar = hasDailyTasksDone && dayLogs.length > 0;
+      const hasSilverStar = hasDailyTasksDone && dayLogs.length === 0;
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -1850,7 +1882,8 @@ function renderCalendar() {
         <div class="week-day-right">
           ${isStreakDay && streakDayNum > 0 ? `<span class="cal-done-tag" title="Qualifying Streak Day #${streakDayNum}">🔥 Day ${streakDayNum}</span>` : ""}
           ${isFrozen ? `<span class="cal-freeze-tag" title="Streak Freeze automatically used on ${dateStr}">❄️ Freeze</span>` : ""}
-          ${hasStar ? `<span class="cal-star-tag" title="All Daily Tasks completed on ${dateStr}">⭐</span>` : ""}
+          ${hasGoldStar ? `<span class="cal-star-tag" title="Gold Star: All Daily Tasks + Activity completed on ${dateStr}">★</span>` : ""}
+          ${hasSilverStar ? `<span class="cal-star-tag is-silver" title="Silver Star: All Daily Tasks completed on ${dateStr} (no activities logged)">★</span>` : ""}
           ${dayRerolls > 0 ? `<span class="cal-reroll-tag" title="${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}">🎲 ${dayRerolls}</span>` : ""}
         </div>
       `;
@@ -1915,7 +1948,9 @@ function renderCalendar() {
       const dateStr = `${cellYear}-${String(cellMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
       const dayLogs = logsByDate.get(dateStr) || [];
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
-      const hasStar = Boolean(state.dailyStarsByDate[dateStr]);
+      const hasDailyTasksDone = Boolean(state.dailyStarsByDate[dateStr]);
+      const hasGoldStar = hasDailyTasksDone && dayLogs.length > 0;
+      const hasSilverStar = hasDailyTasksDone && dayLogs.length === 0;
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -1934,7 +1969,8 @@ function renderCalendar() {
         dateStr,
         dayLogs,
         dayRerolls,
-        hasStar,
+        hasGoldStar,
+        hasSilverStar,
         isFrozen,
         isStreakDay,
         chainLeft,
@@ -1963,7 +1999,8 @@ function createMonthlyDayCell({
   dateStr,
   dayLogs,
   dayRerolls,
-  hasStar,
+  hasGoldStar,
+  hasSilverStar,
   isFrozen,
   isStreakDay,
   chainLeft,
@@ -2006,7 +2043,8 @@ function createMonthlyDayCell({
       <span class="cal-day-badges">
         ${dayNote ? `<span class="cal-note-inline" aria-label="Daily note">📝</span>` : ""}
         ${isFrozen ? `<span class="cal-freeze-inline" aria-label="Streak Freeze used">❄️</span>` : ""}
-        ${hasStar ? `<span class="cal-star-inline" aria-label="Daily Tasks completed">★</span>` : ""}
+        ${hasGoldStar ? `<span class="cal-star-inline" aria-label="Gold Star: Daily Tasks and activity completed">★</span>` : ""}
+        ${hasSilverStar ? `<span class="cal-star-inline is-silver" aria-label="Silver Star: Daily Tasks completed">★</span>` : ""}
         ${dayRerolls > 0 ? `<span class="cal-reroll-inline">🎲${dayRerolls}</span>` : ""}
       </span>
     </div>
@@ -2034,12 +2072,17 @@ function createMonthlyDayCell({
     freezeEl.addEventListener("mouseleave", hideCalendarTooltip);
   }
 
-  // Hover tooltip for the Star indicator (also mentions streak day # if qualifying)
+  // Hover tooltip for the Star indicator (Gold vs Silver)
   const starEl = cell.querySelector(".cal-star-inline");
   if (starEl) {
-    const streakSuffix =
-      isStreakDay && streakDayNum > 0 ? ` (🔥 Streak Day ${streakDayNum})` : "";
-    const starTooltipHtml = `<div class="tooltip-item"><span>⭐</span><span>All Daily Tasks completed on ${escapeHtml(dateStr)}${escapeHtml(streakSuffix)}!</span></div>`;
+    let starTooltipHtml = "";
+    if (hasGoldStar) {
+      const streakSuffix =
+        isStreakDay && streakDayNum > 0 ? ` (🔥 Streak Day ${streakDayNum})` : "";
+      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-gold)">★</span><span>Gold Star: All Daily Tasks + Activity completed on ${escapeHtml(dateStr)}${escapeHtml(streakSuffix)}!</span></div>`;
+    } else {
+      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-silver)">★</span><span>Silver Star: All Daily Tasks completed on ${escapeHtml(dateStr)} (no activity logged)</span></div>`;
+    }
     starEl.addEventListener("mouseenter", (e) => showCalendarTooltip(starTooltipHtml, e));
     starEl.addEventListener("mousemove", (e) => positionCalendarTooltip(e));
     starEl.addEventListener("mouseleave", hideCalendarTooltip);
@@ -2141,7 +2184,9 @@ function renderDayInspector() {
 
   const dayLogs = state.logs.filter((l) => l.date === selectedDateStr);
   const dayRerolls = Number(state.rerollsByDate[selectedDateStr]) || 0;
-  const hasStar = Boolean(state.dailyStarsByDate[selectedDateStr]);
+  const hasDailyTasksDone = Boolean(state.dailyStarsByDate[selectedDateStr]);
+  const hasGoldStar = hasDailyTasksDone && dayLogs.length > 0;
+  const hasSilverStar = hasDailyTasksDone && dayLogs.length === 0;
 
   // Completed badge: green when > 0, neutral when 0
   const countBadgeEl = document.getElementById("inspector-count-badge");
@@ -2154,10 +2199,19 @@ function renderDayInspector() {
   rerollBadgeEl.textContent = `🎲 ${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}`;
   rerollBadgeEl.classList.toggle("badge-reroll", dayRerolls > 0);
 
-  // Star badge if all Daily Tasks were completed on this date
+  // Star badge (Gold if Daily Tasks + Activity, Silver if only Daily Tasks)
   const starBadgeEl = document.getElementById("inspector-star-badge");
   if (starBadgeEl) {
-    starBadgeEl.classList.toggle("hidden", !hasStar);
+    starBadgeEl.classList.toggle("hidden", !hasGoldStar && !hasSilverStar);
+    starBadgeEl.classList.toggle("badge-star", hasGoldStar);
+    starBadgeEl.classList.toggle("badge-star-silver", hasSilverStar);
+    if (hasGoldStar) {
+      starBadgeEl.textContent = "★ Gold Star";
+      starBadgeEl.title = "All Daily Tasks + at least 1 Activity were completed on this date!";
+    } else if (hasSilverStar) {
+      starBadgeEl.textContent = "★ Silver Star";
+      starBadgeEl.title = "All Daily Tasks were completed on this date (no activities logged).";
+    }
   }
 
   // Freeze badge if a Streak Freeze was automatically consumed on this date
@@ -2208,6 +2262,9 @@ function renderDayInspector() {
 
       li.querySelector("button").addEventListener("click", () => {
         state.logs = state.logs.filter((l) => l.id !== log.id);
+        if (log.date === todayStr) {
+          evaluateTodayDailyStar(false);
+        }
         saveState();
         renderAll();
       });
