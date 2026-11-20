@@ -5,10 +5,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebas
 import {
   getAuth,
   GoogleAuthProvider,
+  EmailAuthProvider,
   onAuthStateChanged,
   signInAnonymously,
   signInWithPopup,
   linkWithPopup,
+  linkWithCredential,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   reauthenticateWithPopup,
   deleteUser,
   signOut as firebaseSignOut
@@ -86,20 +90,43 @@ function setSyncStatus(status, detail = "") {
   }
 }
 
+const INTERNAL_EMAIL_DOMAIN = "users.decideforme.app";
+
+function getAccountType(user) {
+  if (!user || user.isAnonymous) return "guest";
+  if (user.email && user.email.endsWith(`@${INTERNAL_EMAIL_DOMAIN}`)) {
+    return "username";
+  }
+  return "google";
+}
+
+function usernameToInternalEmail(rawUsername) {
+  const normalized = String(rawUsername || "").trim().toLowerCase();
+  if (!/^[a-z0-9._-]{5,24}$/.test(normalized)) {
+    throw new Error("Username must be 5–24 characters (letters, numbers, ., _, -).");
+  }
+  return {
+    username: normalized,
+    internalEmail: `${normalized}@${INTERNAL_EMAIL_DOMAIN}`
+  };
+}
+
 function updateAccountUI(user) {
   const labelEl = document.getElementById("account-btn-label");
   const titleEl = document.getElementById("account-user-title");
   const subtitleEl = document.getElementById("account-user-subtitle");
   const googleBtn = document.getElementById("btn-google-signin");
+  const usernameBtn = document.getElementById("btn-username-signin");
   const signOutBtn = document.getElementById("btn-google-signout");
   const deleteAccountBtns = [
     document.getElementById("btn-delete-account"),
     document.getElementById("btn-delete-account-footer")
   ];
 
-  const isGoogleUser = Boolean(user && !user.isAnonymous);
+  const accountType = getAccountType(user);
+  const isSignedInAccount = accountType === "google" || accountType === "username";
   deleteAccountBtns.forEach((btn) => {
-    if (btn) btn.classList.toggle("hidden", !isGoogleUser);
+    if (btn) btn.classList.toggle("hidden", !isSignedInAccount);
   });
 
   if (!user) {
@@ -107,23 +134,34 @@ function updateAccountUI(user) {
     if (titleEl) titleEl.textContent = "Not signed in";
     if (subtitleEl) subtitleEl.textContent = "Local-only mode";
     if (googleBtn) googleBtn.classList.remove("hidden");
+    if (usernameBtn) usernameBtn.classList.remove("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
     setSyncStatus("offline", "Local only");
     return;
   }
 
-  if (user.isAnonymous) {
+  if (accountType === "guest") {
     if (labelEl) labelEl.textContent = "Guest";
     if (titleEl) titleEl.textContent = "Guest Mode";
-    if (subtitleEl) subtitleEl.textContent = "Sign in with Google to sync across devices";
+    if (subtitleEl) subtitleEl.textContent = "Sign in to sync across devices";
     if (googleBtn) googleBtn.classList.remove("hidden");
+    if (usernameBtn) usernameBtn.classList.remove("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
+  } else if (accountType === "username") {
+    const username = (user.email || "user").split("@")[0];
+    if (labelEl) labelEl.textContent = username;
+    if (titleEl) titleEl.textContent = username;
+    if (subtitleEl) subtitleEl.textContent = "Private account (no email)";
+    if (googleBtn) googleBtn.classList.add("hidden");
+    if (usernameBtn) usernameBtn.classList.add("hidden");
+    if (signOutBtn) signOutBtn.classList.remove("hidden");
   } else {
     const firstName = (user.displayName || user.email || "Account").split(" ")[0];
     if (labelEl) labelEl.textContent = firstName;
     if (titleEl) titleEl.textContent = user.displayName || "Google Account";
     if (subtitleEl) subtitleEl.textContent = user.email || "Synced";
     if (googleBtn) googleBtn.classList.add("hidden");
+    if (usernameBtn) usernameBtn.classList.add("hidden");
     if (signOutBtn) signOutBtn.classList.remove("hidden");
   }
 }
@@ -198,7 +236,7 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
   setSyncStatus("syncing");
   await setDoc(doc(db, "users", user.uid), {
     state: sanitized,
-    accountType: user.isAnonymous ? "guest" : "google",
+    accountType: getAccountType(user),
     updatedAt: serverTimestamp()
   });
   lastSyncedJson = json;
@@ -253,7 +291,7 @@ async function attachUserSync(user) {
       const cloudData = snap.data();
       const cloudState = cloudData?.state;
       const needsMetadataUpdate =
-        cloudData?.accountType !== (user.isAnonymous ? "guest" : "google");
+        cloudData?.accountType !== getAccountType(user);
 
       if (cloudState) {
         const merged = mergeLocalAndCloudState(localBefore, cloudState);
@@ -336,6 +374,69 @@ async function signInWithGoogle() {
   }
 }
 
+async function signInWithUsername(rawUsername, password, isSignUp) {
+  const { username, internalEmail } = usernameToInternalEmail(rawUsername);
+  if (!password || password.length < 8) {
+    throw new Error(
+      isSignUp
+        ? "please make me proud, use a better password"
+        : "Password must be at least 8 characters."
+    );
+  }
+
+  const localSnapshot = window.DecideForMeApp?.getState();
+  pendingPreSignInLocalState = localSnapshot ? sanitizeForFirestore(localSnapshot) : null;
+
+  try {
+    if (isSignUp) {
+      if (auth.currentUser && auth.currentUser.isAnonymous) {
+        try {
+          const cred = EmailAuthProvider.credential(internalEmail, password);
+          const result = await linkWithCredential(auth.currentUser, cred);
+          updateAccountUI(result.user);
+          const currentState = window.DecideForMeApp?.getState();
+          if (currentState) {
+            await writeStateToFirestore(result.user, currentState, true);
+          }
+          notifyToast(`Account "${username}" created! Your data is now backed up.`);
+          return;
+        } catch (linkErr) {
+          if (linkErr.code === "auth/email-already-in-use" || linkErr.code === "auth/credential-already-in-use") {
+            throw new Error("That username is already taken. Try signing in instead.");
+          }
+          throw linkErr;
+        }
+      }
+
+      await createUserWithEmailAndPassword(auth, internalEmail, password);
+      notifyToast(`Account "${username}" created!`);
+      return;
+    }
+
+    await signInWithEmailAndPassword(auth, internalEmail, password);
+    notifyToast(`Signed in as ${username}!`);
+  } catch (err) {
+    pendingPreSignInLocalState = null;
+    if (err.code === "auth/email-already-in-use") {
+      throw new Error("That username is already taken. Try signing in instead.");
+    }
+    if (
+      err.code === "auth/wrong-password" ||
+      err.code === "auth/user-not-found" ||
+      err.code === "auth/invalid-credential"
+    ) {
+      throw new Error("Incorrect username or password.");
+    }
+    if (err.code === "auth/weak-password") {
+      throw new Error("Password must be at least 6 characters.");
+    }
+    if (err.code === "auth/too-many-requests") {
+      throw new Error("Too many attempts. Please wait a moment and try again.");
+    }
+    throw err;
+  }
+}
+
 async function signOut() {
   try {
     await flushSave();
@@ -381,9 +482,15 @@ async function deleteAccount() {
       await deleteUser(user);
     } catch (authErr) {
       if (authErr.code === "auth/requires-recent-login") {
-        await reauthenticateWithPopup(user, googleProvider);
-        await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
-        await deleteUser(user);
+        if (getAccountType(user) === "google") {
+          await reauthenticateWithPopup(user, googleProvider);
+          await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
+          await deleteUser(user);
+        } else {
+          notifyToast("For security, please sign out and sign back in, then delete your account.");
+          await attachUserSync(user);
+          return;
+        }
       } else {
         throw authErr;
       }
@@ -439,6 +546,7 @@ window.DecideForMeCloud = {
   scheduleSave,
   flushSave,
   signInWithGoogle,
+  signInWithUsername,
   signOut,
   deleteAccount
 };

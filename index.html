@@ -88,6 +88,10 @@
               <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
               <span class="theme-option-label">Sign in with Google</span>
             </button>
+            <button type="button" class="theme-option" id="btn-username-signin" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <span class="theme-option-label">Sign in with Username</span>
+            </button>
             <button type="button" class="theme-option is-danger hidden" id="btn-google-signout" role="menuitem">
               <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
               <span class="theme-option-label">Sign out</span>
@@ -739,6 +743,31 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-primary" id="btn-ios-install-close">Got it</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Username + Password Auth Modal (No Email Required) -->
+  <div class="modal-backdrop hidden" id="modal-username-auth" role="dialog" aria-modal="true" aria-labelledby="modal-username-auth-title">
+    <div class="modal-card">
+      <h3 id="modal-username-auth-title">Private Account (No Email)</h3>
+      <div class="username-auth-tabs" role="tablist" aria-label="Account mode">
+        <button type="button" class="btn btn-sm username-auth-tab is-active" id="tab-username-signin" role="tab" aria-selected="true">Sign In</button>
+        <button type="button" class="btn btn-sm username-auth-tab" id="tab-username-signup" role="tab" aria-selected="false">Create Account</button>
+      </div>
+      <form id="form-username-auth" novalidate>
+        <label class="field-label" for="input-auth-username">Username</label>
+        <input type="text" id="input-auth-username" class="text-input" placeholder="e.g. alex_99" autocomplete="username" minlength="5" maxlength="24" required />
+        <label class="field-label" for="input-auth-password">Password</label>
+        <input type="password" id="input-auth-password" class="text-input" placeholder="At least 8 characters" autocomplete="current-password" minlength="8" required />
+        <p class="username-auth-note" id="username-auth-note">
+          Sign in with your username and password to sync across devices.
+        </p>
+        <p class="username-auth-error hidden" id="username-auth-error" role="alert"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-username-auth-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-username-auth-submit">Sign In</button>
+        </div>
+      </form>
     </div>
   </div>
 

@@ -8,11 +8,11 @@ service cloud.firestore {
     // ===============================================================
     //
     // Collection: users
-    // Document ID: {userId} (matches Firebase Auth UID, including anonymous/guest & Google Sign-In)
+    // Document ID: {userId} (matches Firebase Auth UID, including anonymous/guest, Google Sign-In, & username/password)
     // Fields:
     //   - state: map (required, max 50 top-level keys) - serialized DecideForMe app state
     //   - updatedAt: timestamp (required) - last sync timestamp
-    //   - accountType: string (optional, 'guest' | 'google') - authentication provider type
+    //   - accountType: string (optional, 'guest' | 'google' | 'username') - authentication provider type
     //
     // ===============================================================
 
@@ -50,7 +50,7 @@ service cloud.firestore {
              data.state is map &&
              data.state.keys().size() <= 50 &&
              data.updatedAt is timestamp &&
-             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google']));
+             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google', 'username']));
     }
 
     // ===============================================================

@@ -628,6 +628,40 @@ body {
   margin-top: 2px;
 }
 
+.username-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+
+.username-auth-tab {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.username-auth-tab.is-active {
+  background: var(--accent-soft, rgba(99, 102, 241, 0.16));
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.username-auth-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+}
+
+.username-auth-error {
+  font-size: 0.8rem;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin: 10px 0 0;
+}
+
 .theme-caret {
   opacity: 0.75;
   transition: transform 0.15s ease;

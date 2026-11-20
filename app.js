@@ -3856,6 +3856,103 @@ function initEvents() {
     });
   }
 
+  // Username + Password Auth Modal
+  const usernameModal = document.getElementById("modal-username-auth");
+  const usernameForm = document.getElementById("form-username-auth");
+  const usernameInput = document.getElementById("input-auth-username");
+  const passwordInput = document.getElementById("input-auth-password");
+  const tabSignIn = document.getElementById("tab-username-signin");
+  const tabSignUp = document.getElementById("tab-username-signup");
+  const authNote = document.getElementById("username-auth-note");
+  const authError = document.getElementById("username-auth-error");
+  const authSubmitBtn = document.getElementById("btn-username-auth-submit");
+  const authCancelBtn = document.getElementById("btn-username-auth-cancel");
+  let usernameAuthMode = "signin";
+
+  const setUsernameAuthMode = (mode) => {
+    usernameAuthMode = mode === "signup" ? "signup" : "signin";
+    const isSignUp = usernameAuthMode === "signup";
+    if (tabSignIn) {
+      tabSignIn.classList.toggle("is-active", !isSignUp);
+      tabSignIn.setAttribute("aria-selected", String(!isSignUp));
+    }
+    if (tabSignUp) {
+      tabSignUp.classList.toggle("is-active", isSignUp);
+      tabSignUp.setAttribute("aria-selected", String(isSignUp));
+    }
+    if (passwordInput) {
+      passwordInput.autocomplete = isSignUp ? "new-password" : "current-password";
+    }
+    if (authNote) {
+      authNote.textContent = isSignUp
+        ? "No email required — keep your username & password safe (there is no email reset)."
+        : "Sign in with your username and password to sync across devices.";
+    }
+    if (authSubmitBtn) {
+      authSubmitBtn.textContent = isSignUp ? "Create Account" : "Sign In";
+    }
+    if (authError) {
+      authError.textContent = "";
+      authError.classList.add("hidden");
+    }
+  };
+
+  const closeUsernameAuthModal = () => {
+    if (usernameModal) usernameModal.classList.add("hidden");
+  };
+
+  const openUsernameAuthModal = () => {
+    if (!usernameModal) return;
+    setUsernameAuthMode("signin");
+    if (usernameForm) usernameForm.reset();
+    usernameModal.classList.remove("hidden");
+    if (usernameInput) usernameInput.focus();
+  };
+
+  const usernameSignInBtn = document.getElementById("btn-username-signin");
+  if (usernameSignInBtn) {
+    usernameSignInBtn.addEventListener("click", () => {
+      closeAccountDropdown();
+      openUsernameAuthModal();
+    });
+  }
+
+  if (tabSignIn) tabSignIn.addEventListener("click", () => setUsernameAuthMode("signin"));
+  if (tabSignUp) tabSignUp.addEventListener("click", () => setUsernameAuthMode("signup"));
+  if (authCancelBtn) authCancelBtn.addEventListener("click", closeUsernameAuthModal);
+  if (usernameModal) {
+    usernameModal.addEventListener("click", (e) => {
+      if (e.target === usernameModal) closeUsernameAuthModal();
+    });
+  }
+
+  if (usernameForm) {
+    usernameForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!window.DecideForMeCloud?.signInWithUsername) return;
+      if (authError) {
+        authError.textContent = "";
+        authError.classList.add("hidden");
+      }
+      if (authSubmitBtn) authSubmitBtn.disabled = true;
+      try {
+        await window.DecideForMeCloud.signInWithUsername(
+          usernameInput?.value || "",
+          passwordInput?.value || "",
+          usernameAuthMode === "signup"
+        );
+        closeUsernameAuthModal();
+      } catch (err) {
+        if (authError) {
+          authError.textContent = err?.message || "Could not sign in. Please try again.";
+          authError.classList.remove("hidden");
+        }
+      } finally {
+        if (authSubmitBtn) authSubmitBtn.disabled = false;
+      }
+    });
+  }
+
   const googleSignOutBtn = document.getElementById("btn-google-signout");
   if (googleSignOutBtn) {
     googleSignOutBtn.addEventListener("click", () => {
