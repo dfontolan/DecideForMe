@@ -1503,9 +1503,49 @@ body {
 
 .daily-header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.header-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.procrastination-card .inspector-header {
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.daily-tasks-card .inspector-header,
+.scheduled-tasks-card .inspector-header {
+  flex-wrap: wrap;
+}
+
+.card.is-collapsed .card-header-uncollapsed-action {
+  display: none;
+}
+
+.card-header-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.procrastination-card .daily-tasks-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 0;
+  margin-bottom: 10px;
 }
 
 .btn-edit-mode {
@@ -1833,8 +1873,9 @@ body {
 .daily-tasks-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 32px;
   margin-bottom: 12px;
 }
 
@@ -1917,6 +1958,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 32px;
   margin-bottom: 12px;
 }
 
@@ -3439,17 +3481,16 @@ body {
 
 .task-hub-panel {
   border-radius: var(--radius-md);
+  padding: 10px;
 }
 
 .task-hub-panel.all-done {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--star-gold) 45%, transparent);
-  padding: 10px;
   background: color-mix(in srgb, var(--star-gold) 4%, transparent);
 }
 
 .task-hub-panel.silver-done {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--star-silver) 45%, transparent);
-  padding: 10px;
   background: color-mix(in srgb, var(--star-silver) 4%, transparent);
 }
 
@@ -3609,7 +3650,8 @@ body {
   }
 
   /* Mobile View Switching via Sticky Bottom Nav */
-  .app-shell[data-mobile-view="decide"] .task-hub-card,
+  .app-shell[data-mobile-view="decide"] #daily-tasks-card,
+  .app-shell[data-mobile-view="decide"] #scheduled-tasks-card,
   .app-shell[data-mobile-view="decide"] .column-right {
     display: none;
   }

@@ -987,7 +987,7 @@ function applyThemeCopy() {
   const sectionLabels = [
     ["section-label-activity-lists", "✨ Sacred Scrolls", "🃏 The Deck", "Activity Lists"],
     ["section-label-daily-tasks", "🕯️ Daily Rituals", "🕯️ Daily Spread", "Daily Checklist"],
-    ["section-label-scheduled-tasks", "📜 Destiny & Deadlines", "📜 Fate & Appointments", "To-Do & Schedule"],
+    ["section-label-scheduled-tasks", "📜 To-Do & Schedule", "📜 To-Do & Schedule", "To-Do & Schedule"],
     ["section-label-procrastination", "🕳️ The Void (Procrastination)", "🌑 Reversed Cards (Procrastination)", "Procrastination List"]
   ];
   sectionLabels.forEach(([id, astroText, tarotText, darkText]) => {
@@ -3711,36 +3711,6 @@ function renderCollapsibleCards() {
   });
 }
 
-function setActiveTaskTab(tabName) {
-  const validTabs = ["daily", "schedule"];
-  const nextTab = validTabs.includes(tabName) ? tabName : "daily";
-  state.activeTaskTab = nextTab;
-  saveState();
-  renderTaskHubTabs();
-}
-
-function renderTaskHubTabs() {
-  const activeTab = ["daily", "schedule"].includes(state.activeTaskTab)
-    ? state.activeTaskTab
-    : "daily";
-
-  document.querySelectorAll(".task-hub-tab").forEach((btn) => {
-    const isActive = btn.dataset.taskTab === activeTab;
-    btn.classList.toggle("active", isActive);
-    btn.setAttribute("aria-selected", isActive ? "true" : "false");
-  });
-
-  const panelMap = {
-    daily: document.getElementById("daily-tasks-card"),
-    schedule: document.getElementById("scheduled-tasks-card")
-  };
-
-  Object.entries(panelMap).forEach(([key, panelEl]) => {
-    if (!panelEl) return;
-    panelEl.classList.toggle("hidden", key !== activeTab);
-  });
-}
-
 function setMobileView(viewName) {
   const validViews = ["decide", "tasks", "calendar"];
   const nextView = validViews.includes(viewName) ? viewName : "decide";
@@ -3758,7 +3728,6 @@ function setMobileView(viewName) {
 function renderAll() {
   applyTheme();
   renderCollapsibleCards();
-  renderTaskHubTabs();
   renderListTabs();
   renderDecisionCard();
   renderActivityPool();
@@ -3874,13 +3843,6 @@ function initEvents() {
     }
   });
 
-  // Tabbed Task Hub (Daily | Schedule | Procrastination)
-  document.querySelectorAll(".task-hub-tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      setActiveTaskTab(btn.dataset.taskTab);
-    });
-  });
-
   // Sticky Mobile Bottom Navigation
   document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -3986,6 +3948,8 @@ function initEvents() {
   };
 
   bindCollapsibleHeader("pool-card", "activityLists");
+  bindCollapsibleHeader("daily-tasks-card", "dailyTasks");
+  bindCollapsibleHeader("scheduled-tasks-card", "scheduledTasks");
   bindCollapsibleHeader("procrastination-card", "procrastination");
   bindCollapsibleHeader("insights-card", "insights");
 
