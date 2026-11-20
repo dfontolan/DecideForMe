@@ -4778,7 +4778,7 @@ async function checkForAppUpdates() {
     }
   } catch (err) {
     console.warn("Update check failed:", err);
-    showToast("Could not check for updates. Please try again.");
+    showToast("Update server is offline. Please ask me about it.");
   } finally {
     isCheckingForUpdates = false;
   }
