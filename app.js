@@ -1252,7 +1252,7 @@ function renderHeroListSwitcherButtons(containerEl, activePool) {
     btn.innerHTML = `
       <span class="color-dot hero-list-dot" style="background-color: ${listColor}"></span>
       <span>${escapeHtml(list.name)}</span>
-      ${isActive ? `<span class="hero-count-pill">${checkedCount}/${totalCount} ready</span>` : ""}
+      <span class="hero-count-pill">${checkedCount}/${totalCount} ready</span>
     `;
     btn.addEventListener("click", () => {
       if (isRolling) return;
@@ -1291,7 +1291,7 @@ function renderHeroListSwitcherButtons(containerEl, activePool) {
   pBtn.innerHTML = `
     <span class="color-dot hero-list-dot" style="background-color: ${PROCRASTINATION_LIST_COLOR}"></span>
     <span>Procrastination List</span>
-    ${isProcrastActive ? `<span class="hero-count-pill">${pendingCount} pending</span>` : ""}
+    <span class="hero-count-pill">${pendingCount} pending</span>
   `;
   pBtn.addEventListener("click", () => {
     if (isRolling) return;
@@ -4590,6 +4590,10 @@ function initPwa() {
   const isIos =
     /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isMobileOrTablet =
+    isIos ||
+    /Android|webOS|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && window.matchMedia("(pointer: coarse)").matches);
   const isStandalone =
     Boolean(window.navigator.standalone) ||
     window.matchMedia("(display-mode: standalone)").matches;
@@ -4613,6 +4617,7 @@ function initPwa() {
   }
 
   window.addEventListener("beforeinstallprompt", (e) => {
+    if (!isMobileOrTablet) return;
     e.preventDefault();
     deferredInstallPrompt = e;
     installBtn.classList.remove("hidden");

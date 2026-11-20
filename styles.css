@@ -919,6 +919,11 @@ body {
   z-index: 1;
 }
 
+.decision-card > #decision-idle {
+  justify-content: flex-start;
+  align-self: start;
+}
+
 .decision-card > .decision-state.hidden {
   display: flex !important;
   visibility: hidden;
@@ -1203,11 +1208,18 @@ body {
 .hero-count-pill {
   font-size: 0.74rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   padding: 2px 8px;
   border-radius: 99px;
   background: color-mix(in srgb, var(--pill-list-color, var(--hero-list-color)) 18%, transparent);
   border: 1px solid color-mix(in srgb, var(--pill-list-color, var(--hero-list-color)) 45%, transparent);
   color: var(--text-primary);
+}
+
+.hero-list-btn:not(.active) .hero-count-pill {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-muted);
 }
 
 .hero-title {
@@ -3619,7 +3631,7 @@ body {
   .header-actions {
     width: 100%;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: center;
     gap: 6px;
   }
 
@@ -3630,10 +3642,6 @@ body {
 
   .header-actions:has(#btn-install-pwa.hidden) {
     display: none;
-  }
-
-  .header-actions #btn-install-pwa {
-    margin-right: auto;
   }
 
   .footer-data-wrap {
@@ -3728,6 +3736,10 @@ body {
   .decision-card {
     padding: 16px 14px;
     min-height: 0;
+  }
+
+  .decision-card > .decision-state.hidden {
+    display: none !important;
   }
 
   .hero-title {
@@ -3908,6 +3920,49 @@ body {
 
   .inspector-header {
     flex-wrap: wrap;
+  }
+
+  .daily-tasks-card .inspector-header,
+  .scheduled-tasks-card .inspector-header {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .daily-tasks-card .section-label,
+  .scheduled-tasks-card .section-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .daily-tasks-card .daily-header-actions,
+  .scheduled-tasks-card .daily-header-actions {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .daily-tasks-card .header-task-actions,
+  .scheduled-tasks-card .header-task-actions {
+    gap: 4px;
+  }
+
+  .daily-tasks-card .inspector-header .badge,
+  .scheduled-tasks-card .inspector-header .badge {
+    font-size: 0.66rem;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+
+  .daily-tasks-card .inspector-header .btn-xs,
+  .scheduled-tasks-card .inspector-header .btn-xs {
+    font-size: 0.7rem;
+    padding: 3px 6px;
+    white-space: nowrap;
+  }
+
+  .daily-tasks-card .inspector-header .btn-collapse-toggle,
+  .scheduled-tasks-card .inspector-header .btn-collapse-toggle {
+    padding: 2px;
   }
 
   .toast-container {
