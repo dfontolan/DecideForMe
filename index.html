@@ -779,6 +779,25 @@
     </div>
   </div>
 
+  <!-- Password Re-authentication Modal (Account Deletion) -->
+  <div class="modal-backdrop hidden" id="modal-reauth-password" role="dialog" aria-modal="true" aria-labelledby="modal-reauth-title">
+    <div class="modal-card">
+      <h3 id="modal-reauth-title">Confirm Password</h3>
+      <p class="confirm-message">
+        For security, please enter your password to permanently delete your account.
+      </p>
+      <form id="form-reauth-password" novalidate>
+        <label class="form-label" for="input-reauth-password">Password</label>
+        <input type="password" id="input-reauth-password" class="input-text" placeholder="Enter your password" autocomplete="current-password" required />
+        <p class="username-auth-error hidden" id="reauth-password-error" role="alert"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-reauth-cancel">Cancel</button>
+          <button type="submit" class="btn btn-danger" id="btn-reauth-submit">Delete Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 

@@ -14,6 +14,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   reauthenticateWithPopup,
+  reauthenticateWithCredential,
   deleteUser,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
@@ -167,6 +168,48 @@ function updateAccountUI(user) {
   }
 }
 
+const DEFAULT_DAILY_TASKS_SIGNATURE = JSON.stringify([
+  { id: "daily_1", title: "Make bed", doneToday: false },
+  { id: "daily_2", title: "Drink 2L water", doneToday: false },
+  { id: "daily_3", title: "Take vitamins", doneToday: false }
+]);
+
+const DEFAULT_LISTS_SIGNATURE = JSON.stringify([
+  {
+    id: "list_chill",
+    name: "Low Energy / Chill",
+    color: "#3b82f6",
+    items: [
+      { id: "item_ch_1", title: "Light 10-min stretch", checked: true, weight: 1 },
+      { id: "item_ch_2", title: "Make tea & look outside", checked: true, weight: 1 },
+      { id: "item_ch_3", title: "Guided breathing or 10-min meditation", checked: true, weight: 1 }
+    ]
+  },
+  {
+    id: "list_30m",
+    name: "30 Min Tasks",
+    color: "#f59e0b",
+    items: [
+      { id: "item_30_1", title: "Read a book", checked: true, weight: 1 },
+      { id: "item_30_2", title: "Exercise at home", checked: true, weight: 1 },
+      { id: "item_30_3", title: "Mobility & full-body stretching", checked: true, weight: 1 },
+      { id: "item_30_4", title: "Outdoor walk", checked: true, weight: 1 },
+      { id: "item_30_5", title: "Tidy space & quick reset", checked: true, weight: 1 }
+    ]
+  },
+  {
+    id: "list_60m",
+    name: "60+ Min Tasks",
+    color: "#ef4444",
+    items: [
+      { id: "item_60_1", title: "Go to the gym", checked: true, weight: 1 },
+      { id: "item_60_2", title: "Full home workout", checked: true, weight: 1 },
+      { id: "item_60_3", title: "Cook a proper meal from scratch", checked: true, weight: 1 },
+      { id: "item_60_4", title: "Long walk or run", checked: true, weight: 1 }
+    ]
+  }
+]);
+
 function isUntouchedDefaultState(s) {
   if (!s || typeof s !== "object") return true;
   const hasLogs = Array.isArray(s.logs) && s.logs.length > 0;
@@ -175,7 +218,50 @@ function isUntouchedDefaultState(s) {
   const hasStars = s.dailyStarsByDate && Object.keys(s.dailyStarsByDate).length > 0;
   const hasNotes = s.dailyNotesByDate && Object.keys(s.dailyNotesByDate).length > 0;
   const hasRerolls = s.rerollsByDate && Object.keys(s.rerollsByDate).length > 0;
-  return !hasLogs && !hasScheduled && !hasProc && !hasStars && !hasNotes && !hasRerolls;
+  const hasActiveDecision = Boolean(s.activeDecision);
+  const hasDeletedIds = s.deletedIds && Object.keys(s.deletedIds).length > 0;
+  const hasResetAt = typeof s.resetAt === "number" && s.resetAt > 0;
+  if (
+    hasLogs ||
+    hasScheduled ||
+    hasProc ||
+    hasStars ||
+    hasNotes ||
+    hasRerolls ||
+    hasActiveDecision ||
+    hasDeletedIds ||
+    hasResetAt
+  ) {
+    return false;
+  }
+
+  if (Array.isArray(s.dailyTasks)) {
+    const dailySig = JSON.stringify(
+      s.dailyTasks.map((t) => ({ id: t?.id, title: t?.title, doneToday: Boolean(t?.doneToday) }))
+    );
+    if (dailySig !== DEFAULT_DAILY_TASKS_SIGNATURE) return false;
+  }
+
+  if (Array.isArray(s.lists)) {
+    const listsSig = JSON.stringify(
+      s.lists.map((l) => ({
+        id: l?.id,
+        name: l?.name,
+        color: l?.color,
+        items: Array.isArray(l?.items)
+          ? l.items.map((i) => ({
+              id: i?.id,
+              title: i?.title,
+              checked: Boolean(i?.checked),
+              weight: i?.weight ?? 1
+            }))
+          : []
+      }))
+    );
+    if (listsSig !== DEFAULT_LISTS_SIGNATURE) return false;
+  }
+
+  return true;
 }
 
 const TOMBSTONE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
@@ -270,6 +356,10 @@ function mergeLocalAndCloudState(localState, cloudState, preferLocal = false) {
 
 async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false) {
   const sanitized = sanitizeForFirestore(stateObj);
+  if (getAccountType(user) === "guest" && isUntouchedDefaultState(sanitized)) {
+    setSyncStatus("synced", "Guest (local)");
+    return;
+  }
   const json = JSON.stringify(sanitized);
   if (json === lastSyncedJson && !forceMetadataUpdate) {
     setSyncStatus("synced");
@@ -295,7 +385,12 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
 
 function scheduleSave(stateObj) {
   if (!currentUser) return;
-  pendingState = sanitizeForFirestore(stateObj);
+  const sanitized = sanitizeForFirestore(stateObj);
+  if (getAccountType(currentUser) === "guest" && isUntouchedDefaultState(sanitized) && !lastSyncedJson) {
+    setSyncStatus("synced", "Guest (local)");
+    return;
+  }
+  pendingState = sanitized;
   setSyncStatus("syncing");
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -541,6 +636,97 @@ async function signOut() {
   }
 }
 
+function reauthenticateUsernameWithModal(user) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("modal-reauth-password");
+    const form = document.getElementById("form-reauth-password");
+    const input = document.getElementById("input-reauth-password");
+    const errorEl = document.getElementById("reauth-password-error");
+    const cancelBtn = document.getElementById("btn-reauth-cancel");
+    const submitBtn = document.getElementById("btn-reauth-submit");
+
+    if (!modal || !form || !input || !cancelBtn || !submitBtn) {
+      resolve(false);
+      return;
+    }
+
+    input.value = "";
+    if (errorEl) {
+      errorEl.textContent = "";
+      errorEl.classList.add("hidden");
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Delete Account";
+    modal.classList.remove("hidden");
+    setTimeout(() => input.focus(), 30);
+
+    const cleanup = () => {
+      modal.classList.add("hidden");
+      form.removeEventListener("submit", onSubmit);
+      cancelBtn.removeEventListener("click", onCancel);
+      modal.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKeydown);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    const onBackdrop = (e) => {
+      if (e.target === modal) onCancel();
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === "Escape") onCancel();
+    };
+
+    const onSubmit = async (e) => {
+      e.preventDefault();
+      const password = input.value;
+      if (!password) {
+        if (errorEl) {
+          errorEl.textContent = "Please enter your password.";
+          errorEl.classList.remove("hidden");
+        }
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Verifying...";
+      if (errorEl) errorEl.classList.add("hidden");
+
+      try {
+        const cred = EmailAuthProvider.credential(user.email, password);
+        await reauthenticateWithCredential(user, cred);
+        cleanup();
+        resolve(true);
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Delete Account";
+        if (errorEl) {
+          if (
+            err.code === "auth/wrong-password" ||
+            err.code === "auth/invalid-credential"
+          ) {
+            errorEl.textContent = "Incorrect password. Please try again.";
+          } else if (err.code === "auth/too-many-requests") {
+            errorEl.textContent = "Too many attempts. Please wait a moment and try again.";
+          } else {
+            errorEl.textContent = err.message || "Could not verify password.";
+          }
+          errorEl.classList.remove("hidden");
+        }
+      }
+    };
+
+    form.addEventListener("submit", onSubmit);
+    cancelBtn.addEventListener("click", onCancel);
+    modal.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKeydown);
+  });
+}
+
 async function deleteAccount() {
   const user = auth.currentUser;
   if (!user || user.isAnonymous) return;
@@ -572,9 +758,14 @@ async function deleteAccount() {
           await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
           await deleteUser(user);
         } else {
-          notifyToast("For security, please sign out and sign back in, then delete your account.");
-          await attachUserSync(user);
-          return;
+          const verified = await reauthenticateUsernameWithModal(user);
+          if (!verified) {
+            notifyToast("Account deletion cancelled.");
+            await attachUserSync(user);
+            return;
+          }
+          await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
+          await deleteUser(user);
         }
       } else {
         throw authErr;

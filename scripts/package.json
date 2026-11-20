@@ -1,0 +1,12 @@
+{
+  "name": "decideforme-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cleanup:dry": "node cleanup-guests.mjs --dry-run",
+    "cleanup": "node cleanup-guests.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0"
+  }
+}
