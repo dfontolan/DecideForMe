@@ -628,6 +628,10 @@ body {
   margin-top: 2px;
 }
 
+#modal-username-auth .modal-card {
+  width: min(400px, 100%);
+}
+
 .username-auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -649,8 +653,10 @@ body {
 
 .username-auth-note {
   font-size: 0.78rem;
+  line-height: 1.4;
+  min-height: 2.8em;
   color: var(--text-muted);
-  margin: 8px 0 0;
+  margin: 0 0 18px;
 }
 
 .username-auth-error {
@@ -659,7 +665,7 @@ body {
   background: var(--danger-bg);
   border-radius: var(--radius-sm);
   padding: 8px 10px;
-  margin: 10px 0 0;
+  margin: 0 0 16px;
 }
 
 .theme-caret {
