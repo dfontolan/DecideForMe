@@ -4587,6 +4587,31 @@ function initPwa() {
   const installBtn = document.getElementById("btn-install-pwa");
   if (!installBtn) return;
 
+  const isIos =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isStandalone =
+    Boolean(window.navigator.standalone) ||
+    window.matchMedia("(display-mode: standalone)").matches;
+
+  const iosInstallModal = document.getElementById("modal-ios-install");
+  const iosInstallCloseBtn = document.getElementById("btn-ios-install-close");
+
+  if (isIos && !isStandalone) {
+    installBtn.classList.remove("hidden");
+  }
+
+  if (iosInstallModal && iosInstallCloseBtn) {
+    iosInstallCloseBtn.addEventListener("click", () => {
+      iosInstallModal.classList.add("hidden");
+    });
+    iosInstallModal.addEventListener("click", (e) => {
+      if (e.target === iosInstallModal) {
+        iosInstallModal.classList.add("hidden");
+      }
+    });
+  }
+
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
@@ -4594,14 +4619,20 @@ function initPwa() {
   });
 
   installBtn.addEventListener("click", async () => {
-    if (!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    const { outcome } = await deferredInstallPrompt.userChoice;
-    if (outcome === "accepted") {
-      installBtn.classList.add("hidden");
-      showToast("Installing DecideForMe...");
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const { outcome } = await deferredInstallPrompt.userChoice;
+      if (outcome === "accepted") {
+        installBtn.classList.add("hidden");
+        showToast("Installing DecideForMe...");
+      }
+      deferredInstallPrompt = null;
+      return;
     }
-    deferredInstallPrompt = null;
+
+    if (isIos && !isStandalone && iosInstallModal) {
+      iosInstallModal.classList.remove("hidden");
+    }
   });
 
   window.addEventListener("appinstalled", () => {
