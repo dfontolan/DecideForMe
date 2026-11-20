@@ -2,12 +2,13 @@
  * DecideForMe — Offline-First Service Worker
  */
 
-const CACHE_NAME = "decide-for-me-pwa-v12";
+const CACHE_NAME = "decide-for-me-pwa-v13";
 const PRECACHE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./firebase-sync.js",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",

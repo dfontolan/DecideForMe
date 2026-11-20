@@ -201,88 +201,94 @@ function normalizeLists(lists) {
   });
 }
 
+function normalizeLoadedState(parsed) {
+  if (!parsed || !Array.isArray(parsed.lists) || parsed.lists.length === 0) {
+    return createDefaultState();
+  }
+  parsed.logs = Array.isArray(parsed.logs) ? parsed.logs : [];
+  parsed.theme = normalizeTheme(parsed.theme);
+  parsed.calendarView = parsed.calendarView === "week" ? "week" : "month";
+  parsed.rerollsByDate =
+    parsed.rerollsByDate && typeof parsed.rerollsByDate === "object"
+      ? parsed.rerollsByDate
+      : {};
+  parsed.dailyTasks = Array.isArray(parsed.dailyTasks)
+    ? parsed.dailyTasks
+    : createDefaultDailyTasks();
+  parsed.scheduledTasks = Array.isArray(parsed.scheduledTasks)
+    ? parsed.scheduledTasks
+    : [];
+  parsed.procrastinationTasks = Array.isArray(parsed.procrastinationTasks)
+    ? parsed.procrastinationTasks
+    : [];
+  parsed.dailyStarsByDate =
+    parsed.dailyStarsByDate && typeof parsed.dailyStarsByDate === "object"
+      ? parsed.dailyStarsByDate
+      : {};
+  parsed.dailyNotesByDate =
+    parsed.dailyNotesByDate && typeof parsed.dailyNotesByDate === "object"
+      ? parsed.dailyNotesByDate
+      : {};
+  parsed.collapsedCards = {
+    activityLists: Boolean(parsed.collapsedCards && parsed.collapsedCards.activityLists),
+    dailyTasks: Boolean(parsed.collapsedCards && parsed.collapsedCards.dailyTasks),
+    scheduledTasks: Boolean(parsed.collapsedCards && parsed.collapsedCards.scheduledTasks),
+    procrastination: Boolean(parsed.collapsedCards && parsed.collapsedCards.procrastination),
+    insights:
+      parsed.collapsedCards && "insights" in parsed.collapsedCards
+        ? Boolean(parsed.collapsedCards.insights)
+        : true
+  };
+
+  if (parsed.templateVersion !== TEMPLATE_VERSION) {
+    parsed.lists = createDefaultLists();
+    parsed.templateVersion = TEMPLATE_VERSION;
+    parsed.activeDecision = null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+  }
+
+  normalizeLists(parsed.lists);
+  if (!parsed.lists.some((l) => l.id === parsed.activeListId)) {
+    parsed.activeListId = parsed.lists[0].id;
+  }
+  if (!Array.isArray(parsed.heroListIds) || parsed.heroListIds.length === 0) {
+    if (parsed.heroListId === PROCRASTINATION_LIST_ID) {
+      parsed.heroListIds = [PROCRASTINATION_LIST_ID];
+    } else if (parsed.lists.some((l) => l.id === parsed.heroListId)) {
+      parsed.heroListIds = [parsed.heroListId];
+    } else {
+      parsed.heroListIds = [parsed.activeListId];
+    }
+  } else if (parsed.heroListIds.includes(PROCRASTINATION_LIST_ID)) {
+    parsed.heroListIds = [PROCRASTINATION_LIST_ID];
+  } else {
+    parsed.heroListIds = parsed.heroListIds.filter((id) =>
+      parsed.lists.some((l) => l.id === id)
+    );
+    if (parsed.heroListIds.length === 0) {
+      parsed.heroListIds = [parsed.activeListId];
+    }
+  }
+  return parsed;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createDefaultState();
-    const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.lists) || parsed.lists.length === 0) {
-      return createDefaultState();
-    }
-    parsed.logs = Array.isArray(parsed.logs) ? parsed.logs : [];
-    parsed.theme = normalizeTheme(parsed.theme);
-    parsed.calendarView = parsed.calendarView === "week" ? "week" : "month";
-    parsed.rerollsByDate =
-      parsed.rerollsByDate && typeof parsed.rerollsByDate === "object"
-        ? parsed.rerollsByDate
-        : {};
-    parsed.dailyTasks = Array.isArray(parsed.dailyTasks)
-      ? parsed.dailyTasks
-      : createDefaultDailyTasks();
-    parsed.scheduledTasks = Array.isArray(parsed.scheduledTasks)
-      ? parsed.scheduledTasks
-      : [];
-    parsed.procrastinationTasks = Array.isArray(parsed.procrastinationTasks)
-      ? parsed.procrastinationTasks
-      : [];
-    parsed.dailyStarsByDate =
-      parsed.dailyStarsByDate && typeof parsed.dailyStarsByDate === "object"
-        ? parsed.dailyStarsByDate
-        : {};
-    parsed.dailyNotesByDate =
-      parsed.dailyNotesByDate && typeof parsed.dailyNotesByDate === "object"
-        ? parsed.dailyNotesByDate
-        : {};
-    parsed.collapsedCards = {
-      activityLists: Boolean(parsed.collapsedCards && parsed.collapsedCards.activityLists),
-      dailyTasks: Boolean(parsed.collapsedCards && parsed.collapsedCards.dailyTasks),
-      scheduledTasks: Boolean(parsed.collapsedCards && parsed.collapsedCards.scheduledTasks),
-      procrastination: Boolean(parsed.collapsedCards && parsed.collapsedCards.procrastination),
-      insights:
-        parsed.collapsedCards && "insights" in parsed.collapsedCards
-          ? Boolean(parsed.collapsedCards.insights)
-          : true
-    };
-
-    if (parsed.templateVersion !== TEMPLATE_VERSION) {
-      parsed.lists = createDefaultLists();
-      parsed.templateVersion = TEMPLATE_VERSION;
-      parsed.activeDecision = null;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-    }
-
-    normalizeLists(parsed.lists);
-    if (!parsed.lists.some((l) => l.id === parsed.activeListId)) {
-      parsed.activeListId = parsed.lists[0].id;
-    }
-    if (!Array.isArray(parsed.heroListIds) || parsed.heroListIds.length === 0) {
-      if (parsed.heroListId === PROCRASTINATION_LIST_ID) {
-        parsed.heroListIds = [PROCRASTINATION_LIST_ID];
-      } else if (parsed.lists.some((l) => l.id === parsed.heroListId)) {
-        parsed.heroListIds = [parsed.heroListId];
-      } else {
-        parsed.heroListIds = [parsed.activeListId];
-      }
-    } else if (parsed.heroListIds.includes(PROCRASTINATION_LIST_ID)) {
-      parsed.heroListIds = [PROCRASTINATION_LIST_ID];
-    } else {
-      parsed.heroListIds = parsed.heroListIds.filter((id) =>
-        parsed.lists.some((l) => l.id === id)
-      );
-      if (parsed.heroListIds.length === 0) {
-        parsed.heroListIds = [parsed.activeListId];
-      }
-    }
-    return parsed;
+    return normalizeLoadedState(JSON.parse(raw));
   } catch (err) {
     console.error("Failed to load state from localStorage:", err);
     return createDefaultState();
   }
 }
 
-function saveState() {
+function saveState(skipCloud = false) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (!skipCloud && window.DecideForMeCloud && typeof window.DecideForMeCloud.scheduleSave === "function") {
+      window.DecideForMeCloud.scheduleSave(state);
+    }
   } catch (err) {
     console.error("Failed to save state:", err);
   }
@@ -3752,6 +3758,13 @@ function initEvents() {
     document.querySelectorAll(".btn-settings-toggle").forEach((btn) => btn.setAttribute("aria-expanded", "false"));
   };
 
+  const closeAccountDropdown = () => {
+    const dd = document.getElementById("account-dropdown");
+    const btn = document.getElementById("btn-account-toggle");
+    if (dd) dd.classList.add("hidden");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+  };
+
   const bindThemePicker = (pickerId, btnId, dropdownId) => {
     const picker = document.getElementById(pickerId);
     const btn = document.getElementById(btnId);
@@ -3763,6 +3776,7 @@ function initEvents() {
       const willOpen = dropdown.classList.contains("hidden");
       closeThemeDropdowns();
       closeSettingsDropdown();
+      closeAccountDropdown();
       if (willOpen) {
         dropdown.classList.remove("hidden");
         btn.setAttribute("aria-expanded", "true");
@@ -3801,6 +3815,7 @@ function initEvents() {
       const willOpen = dropdown.classList.contains("hidden");
       closeThemeDropdowns();
       closeSettingsDropdown();
+      closeAccountDropdown();
       if (willOpen) {
         dropdown.classList.remove("hidden");
         toggleBtn.setAttribute("aria-expanded", "true");
@@ -3814,6 +3829,41 @@ function initEvents() {
   bindSettingsMenu("btn-settings-toggle", "settings-dropdown");
   bindSettingsMenu("btn-settings-toggle-footer", "settings-dropdown-footer");
 
+  const accountToggleBtn = document.getElementById("btn-account-toggle");
+  const accountDropdown = document.getElementById("account-dropdown");
+  if (accountToggleBtn && accountDropdown) {
+    accountToggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = accountDropdown.classList.contains("hidden");
+      closeThemeDropdowns();
+      closeSettingsDropdown();
+      closeAccountDropdown();
+      if (willOpen) {
+        accountDropdown.classList.remove("hidden");
+        accountToggleBtn.setAttribute("aria-expanded", "true");
+      }
+    });
+    accountDropdown.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  const googleSignInBtn = document.getElementById("btn-google-signin");
+  if (googleSignInBtn) {
+    googleSignInBtn.addEventListener("click", () => {
+      closeAccountDropdown();
+      window.DecideForMeCloud?.signInWithGoogle();
+    });
+  }
+
+  const googleSignOutBtn = document.getElementById("btn-google-signout");
+  if (googleSignOutBtn) {
+    googleSignOutBtn.addEventListener("click", () => {
+      closeAccountDropdown();
+      window.DecideForMeCloud?.signOut();
+    });
+  }
+
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".theme-picker")) {
       closeThemeDropdowns();
@@ -3821,12 +3871,16 @@ function initEvents() {
     if (!e.target.closest(".settings-menu-wrap")) {
       closeSettingsDropdown();
     }
+    if (!e.target.closest(".account-menu-wrap")) {
+      closeAccountDropdown();
+    }
   });
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       closeThemeDropdowns();
       closeSettingsDropdown();
+      closeAccountDropdown();
       closeAboutModal();
       return;
     }
@@ -4646,6 +4700,31 @@ function initPwa() {
     showToast("DecideForMe installed! You can now launch it offline anytime.");
   });
 }
+
+// Expose state hooks for Firebase cloud sync
+window.DecideForMeApp = {
+  getState: () => state,
+  applyCloudState: (nextState) => {
+    state = normalizeLoadedState(JSON.parse(JSON.stringify(nextState)));
+    state.lists.forEach(syncListColorReferences);
+    checkAndPerformDailyReset(false);
+    saveState(true);
+    applyTheme();
+    renderAll();
+  },
+  resetToDefaultState: () => {
+    localStorage.removeItem(STORAGE_KEY);
+    state = createDefaultState();
+    const logicalToday = getLogicalTodayDate();
+    calYear = logicalToday.getFullYear();
+    calMonth = logicalToday.getMonth();
+    selectedDateStr = getLogicalTodayStr();
+    saveState(true);
+    applyTheme();
+    renderAll();
+  },
+  showToast
+};
 
 // Initialize App
 document.addEventListener("DOMContentLoaded", () => {

@@ -65,12 +65,35 @@
         </div>
       </div>
 
-      <!-- Top Utility Actions (Install App, Theme Picker, Settings Menu) -->
+      <!-- Top Utility Actions (Install App, Cloud Account, Theme Picker, Settings Menu) -->
       <div class="header-actions">
         <button type="button" class="btn btn-primary btn-sm hidden" id="btn-install-pwa" title="Install DecideForMe on your device for offline access">
           <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           <span>Install App</span>
         </button>
+        <div class="account-menu-wrap" id="account-menu-wrap">
+          <button type="button" class="btn btn-secondary btn-sm btn-account-toggle" id="btn-account-toggle" aria-haspopup="menu" aria-expanded="false" title="Cloud Sync &amp; Account">
+            <span class="sync-dot" id="account-sync-dot" data-status="offline" aria-hidden="true"></span>
+            <span id="account-btn-label">Guest</span>
+            <svg class="ui-icon theme-caret" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="account-dropdown hidden" id="account-dropdown" role="menu" aria-label="Cloud Account">
+            <div class="account-status-block">
+              <div class="account-user-title" id="account-user-title">Guest Mode</div>
+              <div class="account-user-subtitle" id="account-user-subtitle">Sign in with Google to sync across devices</div>
+              <div class="account-sync-status" id="account-sync-status">Connecting...</div>
+            </div>
+            <div class="menu-divider" role="separator"></div>
+            <button type="button" class="theme-option" id="btn-google-signin" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+              <span class="theme-option-label">Sign in with Google</span>
+            </button>
+            <button type="button" class="theme-option is-danger hidden" id="btn-google-signout" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+              <span class="theme-option-label">Sign out</span>
+            </button>
+          </div>
+        </div>
         <div class="theme-picker" id="theme-picker-header">
           <button type="button" class="btn btn-secondary btn-sm theme-picker-btn" id="btn-theme-toggle" aria-haspopup="menu" aria-expanded="false" title="Select theme">
             <span id="theme-icon">🌙</span> <span id="theme-label">Dark Theme</span>
@@ -732,5 +755,6 @@
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
   <script src="app.js"></script>
+  <script type="module" src="firebase-sync.js"></script>
 </body>
 </html>

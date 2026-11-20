@@ -1,0 +1,370 @@
+/**
+ * DecideForMe — Firebase Authentication & Cloud Firestore Sync
+ */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInAnonymously,
+  signInWithPopup,
+  linkWithPopup,
+  signOut as firebaseSignOut
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  projectId: "decideforme-55674",
+  appId: "1:1042936516436:web:c516f128335377314f82c1",
+  storageBucket: "decideforme-55674.firebasestorage.app",
+  apiKey: "AIzaSyAgPplLXWk7aYVPedG2WLpGtQcDa0ksiXQ",
+  authDomain: "decideforme-55674.firebaseapp.com",
+  messagingSenderId: "1042936516436",
+  measurementId: "G-CM5VFFWF7S"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
+
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  });
+} catch (err) {
+  db = getFirestore(app);
+}
+
+let currentUser = null;
+let unsubscribeDoc = null;
+let saveTimer = null;
+let pendingState = null;
+let lastSyncedJson = "";
+let pendingPreSignInLocalState = null;
+let isExplicitSignOut = false;
+
+function notifyToast(msg) {
+  if (window.DecideForMeApp && typeof window.DecideForMeApp.showToast === "function") {
+    window.DecideForMeApp.showToast(msg);
+  }
+}
+
+function sanitizeForFirestore(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function setSyncStatus(status, detail = "") {
+  const dot = document.getElementById("account-sync-dot");
+  const statusEl = document.getElementById("account-sync-status");
+  if (dot) {
+    dot.dataset.status = status;
+  }
+  if (statusEl) {
+    statusEl.textContent = detail || (
+      status === "synced" ? "Cloud synced" :
+      status === "syncing" ? "Syncing..." :
+      status === "error" ? "Sync paused (offline)" :
+      "Connecting..."
+    );
+  }
+}
+
+function updateAccountUI(user) {
+  const labelEl = document.getElementById("account-btn-label");
+  const titleEl = document.getElementById("account-user-title");
+  const subtitleEl = document.getElementById("account-user-subtitle");
+  const googleBtn = document.getElementById("btn-google-signin");
+  const signOutBtn = document.getElementById("btn-google-signout");
+
+  if (!user) {
+    if (labelEl) labelEl.textContent = "Sign in";
+    if (titleEl) titleEl.textContent = "Not signed in";
+    if (subtitleEl) subtitleEl.textContent = "Local-only mode";
+    if (googleBtn) googleBtn.classList.remove("hidden");
+    if (signOutBtn) signOutBtn.classList.add("hidden");
+    setSyncStatus("offline", "Local only");
+    return;
+  }
+
+  if (user.isAnonymous) {
+    if (labelEl) labelEl.textContent = "Guest";
+    if (titleEl) titleEl.textContent = "Guest Mode";
+    if (subtitleEl) subtitleEl.textContent = "Sign in with Google to sync across devices";
+    if (googleBtn) googleBtn.classList.remove("hidden");
+    if (signOutBtn) signOutBtn.classList.add("hidden");
+  } else {
+    const firstName = (user.displayName || user.email || "Account").split(" ")[0];
+    if (labelEl) labelEl.textContent = firstName;
+    if (titleEl) titleEl.textContent = user.displayName || "Google Account";
+    if (subtitleEl) subtitleEl.textContent = user.email || "Synced";
+    if (googleBtn) googleBtn.classList.add("hidden");
+    if (signOutBtn) signOutBtn.classList.remove("hidden");
+  }
+}
+
+function isUntouchedDefaultState(s) {
+  if (!s || typeof s !== "object") return true;
+  const hasLogs = Array.isArray(s.logs) && s.logs.length > 0;
+  const hasScheduled = Array.isArray(s.scheduledTasks) && s.scheduledTasks.length > 0;
+  const hasProc = Array.isArray(s.procrastinationTasks) && s.procrastinationTasks.length > 0;
+  const hasStars = s.dailyStarsByDate && Object.keys(s.dailyStarsByDate).length > 0;
+  const hasNotes = s.dailyNotesByDate && Object.keys(s.dailyNotesByDate).length > 0;
+  const hasRerolls = s.rerollsByDate && Object.keys(s.rerollsByDate).length > 0;
+  return !hasLogs && !hasScheduled && !hasProc && !hasStars && !hasNotes && !hasRerolls;
+}
+
+function mergeById(primary = [], secondary = []) {
+  const map = new Map();
+  primary.forEach((item) => {
+    if (item && item.id) map.set(item.id, item);
+  });
+  secondary.forEach((item) => {
+    if (item && item.id && !map.has(item.id)) {
+      map.set(item.id, item);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function mergeLists(cloudLists = [], localLists = []) {
+  const byId = new Map();
+  cloudLists.forEach((l) => {
+    if (l && l.id) byId.set(l.id, { ...l, items: Array.isArray(l.items) ? [...l.items] : [] });
+  });
+  localLists.forEach((l) => {
+    if (!l || !l.id) return;
+    if (!byId.has(l.id)) {
+      byId.set(l.id, { ...l, items: Array.isArray(l.items) ? [...l.items] : [] });
+    } else {
+      const existing = byId.get(l.id);
+      existing.items = mergeById(existing.items, Array.isArray(l.items) ? l.items : []);
+    }
+  });
+  return Array.from(byId.values());
+}
+
+function mergeLocalAndCloudState(localState, cloudState) {
+  if (!cloudState) return localState;
+  if (!localState || isUntouchedDefaultState(localState)) return cloudState;
+
+  return {
+    ...cloudState,
+    lists: mergeLists(cloudState.lists, localState.lists),
+    dailyTasks: mergeById(cloudState.dailyTasks, localState.dailyTasks),
+    scheduledTasks: mergeById(cloudState.scheduledTasks, localState.scheduledTasks),
+    procrastinationTasks: mergeById(cloudState.procrastinationTasks, localState.procrastinationTasks),
+    logs: mergeById(cloudState.logs, localState.logs).sort(
+      (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
+    ),
+    dailyStarsByDate: { ...(localState.dailyStarsByDate || {}), ...(cloudState.dailyStarsByDate || {}) },
+    dailyNotesByDate: { ...(localState.dailyNotesByDate || {}), ...(cloudState.dailyNotesByDate || {}) },
+    rerollsByDate: { ...(localState.rerollsByDate || {}), ...(cloudState.rerollsByDate || {}) }
+  };
+}
+
+async function writeStateToFirestore(uid, stateObj) {
+  const sanitized = sanitizeForFirestore(stateObj);
+  const json = JSON.stringify(sanitized);
+  if (json === lastSyncedJson) {
+    setSyncStatus("synced");
+    return;
+  }
+  setSyncStatus("syncing");
+  await setDoc(doc(db, "users", uid), {
+    state: sanitized,
+    updatedAt: serverTimestamp()
+  });
+  lastSyncedJson = json;
+  setSyncStatus("synced");
+}
+
+function scheduleSave(stateObj) {
+  if (!currentUser) return;
+  pendingState = stateObj;
+  setSyncStatus("syncing");
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    flushSave();
+  }, 400);
+}
+
+async function flushSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!currentUser || !pendingState) return;
+  const toSave = pendingState;
+  pendingState = null;
+  try {
+    await writeStateToFirestore(currentUser.uid, toSave);
+  } catch (err) {
+    console.warn("Firestore save deferred/failed:", err);
+    setSyncStatus("error");
+  }
+}
+
+async function attachUserSync(user) {
+  if (unsubscribeDoc) {
+    unsubscribeDoc();
+    unsubscribeDoc = null;
+  }
+
+  const userRef = doc(db, "users", user.uid);
+  const localBefore = pendingPreSignInLocalState || window.DecideForMeApp?.getState();
+  pendingPreSignInLocalState = null;
+
+  try {
+    setSyncStatus("syncing");
+    const snap = await getDoc(userRef);
+
+    if (!snap.exists()) {
+      if (localBefore) {
+        await writeStateToFirestore(user.uid, localBefore);
+      }
+    } else {
+      const cloudState = snap.data()?.state;
+      if (cloudState) {
+        const merged = mergeLocalAndCloudState(localBefore, cloudState);
+        const mergedJson = JSON.stringify(sanitizeForFirestore(merged));
+        const cloudJson = JSON.stringify(sanitizeForFirestore(cloudState));
+
+        lastSyncedJson = cloudJson;
+        window.DecideForMeApp?.applyCloudState(merged);
+
+        if (mergedJson !== cloudJson) {
+          await writeStateToFirestore(user.uid, merged);
+          notifyToast("Local data merged with your cloud account!");
+        } else {
+          setSyncStatus("synced");
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Initial Firestore sync error:", err);
+    setSyncStatus("error");
+  }
+
+  unsubscribeDoc = onSnapshot(
+    userRef,
+    (snapshot) => {
+      if (!snapshot.exists() || snapshot.metadata.hasPendingWrites) return;
+      const remoteState = snapshot.data()?.state;
+      if (!remoteState) return;
+      const remoteJson = JSON.stringify(sanitizeForFirestore(remoteState));
+      if (remoteJson === lastSyncedJson) return;
+
+      lastSyncedJson = remoteJson;
+      window.DecideForMeApp?.applyCloudState(remoteState);
+      setSyncStatus("synced");
+    },
+    (err) => {
+      console.warn("Firestore snapshot listener error:", err);
+      setSyncStatus("error");
+    }
+  );
+}
+
+async function signInWithGoogle() {
+  try {
+    const localSnapshot = window.DecideForMeApp?.getState();
+    pendingPreSignInLocalState = localSnapshot ? sanitizeForFirestore(localSnapshot) : null;
+
+    if (auth.currentUser && auth.currentUser.isAnonymous) {
+      try {
+        await linkWithPopup(auth.currentUser, googleProvider);
+        notifyToast("Signed in with Google! Your data is now backed up.");
+        return;
+      } catch (linkErr) {
+        if (linkErr.code !== "auth/credential-already-in-use") {
+          throw linkErr;
+        }
+      }
+    }
+
+    await signInWithPopup(auth, googleProvider);
+    notifyToast("Signed in with Google!");
+  } catch (err) {
+    pendingPreSignInLocalState = null;
+    if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+      return;
+    }
+    if (err.code === "auth/unauthorized-domain") {
+      notifyToast("Add this domain to Firebase Console → Auth → Authorized domains.");
+    } else {
+      notifyToast("Google sign-in failed. Please try again.");
+    }
+    console.error("Google sign-in error:", err);
+  }
+}
+
+async function signOut() {
+  try {
+    await flushSave();
+    if (unsubscribeDoc) {
+      unsubscribeDoc();
+      unsubscribeDoc = null;
+    }
+    isExplicitSignOut = true;
+    lastSyncedJson = "";
+    await firebaseSignOut(auth);
+    window.DecideForMeApp?.resetToDefaultState();
+    notifyToast("Signed out. Switched to a fresh Guest session.");
+  } catch (err) {
+    isExplicitSignOut = false;
+    console.error("Sign out error:", err);
+    notifyToast("Could not sign out. Please try again.");
+  }
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) {
+    currentUser = null;
+    updateAccountUI(null);
+    if (unsubscribeDoc) {
+      unsubscribeDoc();
+      unsubscribeDoc = null;
+    }
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      console.warn("Anonymous sign-in failed:", err);
+    }
+    return;
+  }
+
+  isExplicitSignOut = false;
+  currentUser = user;
+  updateAccountUI(user);
+  await attachUserSync(user);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    flushSave();
+  }
+});
+window.addEventListener("beforeunload", () => {
+  flushSave();
+});
+
+window.DecideForMeCloud = {
+  scheduleSave,
+  flushSave,
+  signInWithGoogle,
+  signOut
+};
