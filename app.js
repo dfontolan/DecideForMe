@@ -151,8 +151,34 @@ function createDefaultState() {
       insights: true
     },
     lists: createDefaultLists(),
-    logs: []
+    logs: [],
+    deletedIds: {},
+    resetAt: 0
   };
+}
+
+const TOMBSTONE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+function pruneDeletedIds(deletedIds) {
+  if (!deletedIds || typeof deletedIds !== "object") return {};
+  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+  const pruned = {};
+  Object.entries(deletedIds).forEach(([id, ts]) => {
+    if (typeof ts === "number" && ts >= cutoff) {
+      pruned[id] = ts;
+    }
+  });
+  return pruned;
+}
+
+function recordDeletedIds(...ids) {
+  if (!state.deletedIds || typeof state.deletedIds !== "object") {
+    state.deletedIds = {};
+  }
+  const now = Date.now();
+  ids.forEach((id) => {
+    if (id) state.deletedIds[id] = now;
+  });
 }
 
 // Application Runtime State
@@ -247,6 +273,26 @@ function normalizeLoadedState(parsed) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
   }
 
+  parsed.deletedIds = pruneDeletedIds(parsed.deletedIds);
+  parsed.resetAt = typeof parsed.resetAt === "number" ? parsed.resetAt : 0;
+
+  if (Object.keys(parsed.deletedIds).length > 0) {
+    const isDeleted = (id) => Boolean(id && parsed.deletedIds[id]);
+    parsed.lists = parsed.lists.filter((l) => !isDeleted(l.id));
+    parsed.lists.forEach((l) => {
+      if (Array.isArray(l.items)) {
+        l.items = l.items.filter((i) => !isDeleted(i.id));
+      }
+    });
+    parsed.dailyTasks = parsed.dailyTasks.filter((t) => !isDeleted(t.id));
+    parsed.scheduledTasks = parsed.scheduledTasks.filter((t) => !isDeleted(t.id));
+    parsed.procrastinationTasks = parsed.procrastinationTasks.filter((t) => !isDeleted(t.id));
+    parsed.logs = parsed.logs.filter((l) => !isDeleted(l.id));
+    if (parsed.lists.length === 0) {
+      parsed.lists = createDefaultLists();
+    }
+  }
+
   normalizeLists(parsed.lists);
   if (!parsed.lists.some((l) => l.id === parsed.activeListId)) {
     parsed.activeListId = parsed.lists[0].id;
@@ -321,16 +367,28 @@ function checkAndPerformDailyReset(shouldRender = false) {
     });
 
     // Clean up completed one-time scheduled tasks from prior days
+    const expiredScheduledIds = [];
     state.scheduledTasks = (state.scheduledTasks || []).filter((task) => {
       if (task.type !== "once") return true;
       const completedKeys = task.completedDates
         ? Object.keys(task.completedDates).filter((k) => task.completedDates[k])
         : [];
       if (completedKeys.length === 0) return true;
-      return completedKeys.some((k) => k >= currentLogicalToday);
+      const keep = completedKeys.some((k) => k >= currentLogicalToday);
+      if (!keep && task.id) expiredScheduledIds.push(task.id);
+      return keep;
     });
+    if (expiredScheduledIds.length > 0) {
+      recordDeletedIds(...expiredScheduledIds);
+    }
 
     // Completed procrastination tasks vanish on the next logical day
+    const completedProcrastIds = (state.procrastinationTasks || [])
+      .filter((t) => t.doneToday && t.id)
+      .map((t) => t.id);
+    if (completedProcrastIds.length > 0) {
+      recordDeletedIds(...completedProcrastIds);
+    }
     state.procrastinationTasks = (state.procrastinationTasks || []).filter((t) => !t.doneToday);
 
     state.activeDecision = null;
@@ -1703,6 +1761,7 @@ function renderActivityPool() {
         "Delete Activity",
         `Are you sure you want to delete "${item.title}" from "${activeList.name}"?`,
         () => {
+          recordDeletedIds(item.id);
           activeList.items = activeList.items.filter((i) => i.id !== item.id);
           if (state.activeDecision && state.activeDecision.itemId === item.id) {
             state.activeDecision = null;
@@ -1886,6 +1945,7 @@ function renderDailyTasks() {
         "Delete Daily Task",
         `Are you sure you want to delete daily task "${task.title}"?`,
         () => {
+          recordDeletedIds(task.id);
           state.dailyTasks = state.dailyTasks.filter((t) => t.id !== task.id);
           evaluateTodayDailyStar(false);
           saveState();
@@ -2156,6 +2216,7 @@ function renderScheduledTasks() {
         "Delete Scheduled Task",
         `Are you sure you want to delete "${task.title}"?`,
         () => {
+          recordDeletedIds(task.id);
           state.scheduledTasks = state.scheduledTasks.filter((t) => t.id !== task.id);
           evaluateTodayDailyStar(false);
           saveState();
@@ -2414,6 +2475,7 @@ function renderProcrastinationList() {
         "Delete Procrastination Task",
         `Are you sure you want to delete "${task.title}"?`,
         () => {
+          recordDeletedIds(task.id);
           state.procrastinationTasks = state.procrastinationTasks.filter((t) => t.id !== task.id);
           if (
             state.activeDecision &&
@@ -3494,6 +3556,7 @@ function renderDayInspector() {
       `;
 
       li.querySelector("button").addEventListener("click", () => {
+        recordDeletedIds(log.id);
         state.logs = state.logs.filter((l) => l.id !== log.id);
         if (log.date === todayStr) {
           evaluateTodayDailyStar(false);
@@ -4039,6 +4102,11 @@ function initEvents() {
   if (aboutBtn) aboutBtn.addEventListener("click", openAboutModal);
   if (aboutFooterBtn) aboutFooterBtn.addEventListener("click", openAboutModal);
   if (aboutCloseBtn) aboutCloseBtn.addEventListener("click", closeAboutModal);
+
+  const checkUpdatesBtn = document.getElementById("btn-check-updates");
+  const checkUpdatesFooterBtn = document.getElementById("btn-check-updates-footer");
+  if (checkUpdatesBtn) checkUpdatesBtn.addEventListener("click", checkForAppUpdates);
+  if (checkUpdatesFooterBtn) checkUpdatesFooterBtn.addEventListener("click", checkForAppUpdates);
   if (aboutModalEl) {
     aboutModalEl.addEventListener("click", (e) => {
       if (e.target === aboutModalEl) closeAboutModal();
@@ -4515,6 +4583,10 @@ function initEvents() {
       "Delete List",
       `Are you sure you want to delete list "${activeList.name}" and its items? (Past calendar logs will be kept)`,
       () => {
+        recordDeletedIds(
+          activeList.id,
+          ...(activeList.items || []).map((i) => i.id)
+        );
         state.lists = state.lists.filter((l) => l.id !== activeList.id);
         state.activeListId = state.lists[0].id;
         if (state.activeDecision && state.activeDecision.listId === activeList.id) {
@@ -4594,6 +4666,7 @@ function initEvents() {
       () => {
         localStorage.removeItem(STORAGE_KEY);
         state = createDefaultState();
+        state.resetAt = Date.now();
         const logicalToday = getLogicalTodayDate();
         calYear = logicalToday.getFullYear();
         calMonth = logicalToday.getMonth();
@@ -4643,13 +4716,82 @@ function initEvents() {
 
 // PWA Service Worker & Install App Prompt
 let deferredInstallPrompt = null;
+let isCheckingForUpdates = false;
+
+async function checkForAppUpdates() {
+  if (isCheckingForUpdates) return;
+
+  if (!("serviceWorker" in navigator)) {
+    showToast("Updates are not supported in this browser.");
+    return;
+  }
+
+  if (!navigator.onLine) {
+    showToast("You're offline — connect to the internet to check for updates.");
+    return;
+  }
+
+  isCheckingForUpdates = true;
+  showToast("Checking for updates...");
+
+  try {
+    let registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) {
+      registration = await navigator.serviceWorker.register("./sw.js", {
+        updateViaCache: "none",
+      });
+    }
+
+    const triggerReload = () => {
+      showToast("Update found! Reloading...");
+      setTimeout(() => window.location.reload(), 800);
+    };
+
+    if (registration.waiting) {
+      triggerReload();
+      return;
+    }
+
+    let updateFound = false;
+    const onUpdateFound = () => {
+      updateFound = true;
+      const newWorker = registration.installing;
+      if (!newWorker) return;
+
+      newWorker.addEventListener("statechange", () => {
+        if (newWorker.state === "activated") {
+          triggerReload();
+        } else if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+          triggerReload();
+        } else if (newWorker.state === "redundant") {
+          showToast("Update check failed. Please try again.");
+        }
+      });
+    };
+
+    registration.addEventListener("updatefound", onUpdateFound, { once: true });
+    await registration.update();
+
+    if (!updateFound && !registration.installing && !registration.waiting) {
+      registration.removeEventListener("updatefound", onUpdateFound);
+      showToast("You're on the latest version!");
+    }
+  } catch (err) {
+    console.warn("Update check failed:", err);
+    showToast("Could not check for updates. Please try again.");
+  } finally {
+    isCheckingForUpdates = false;
+  }
+}
 
 function initPwa() {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch((err) => {
-        console.warn("Service worker registration skipped or failed:", err);
-      });
+      navigator.serviceWorker
+        .register("./sw.js", { updateViaCache: "none" })
+        .catch((err) => {
+          console.warn("Service worker registration skipped or failed:", err);
+        });
     });
   }
 

@@ -796,8 +796,8 @@ body {
 .is-collapsible-header {
   cursor: pointer;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
   border-radius: var(--radius-sm);
-  transition: background-color 0.15s ease;
 }
 
 .is-collapsible-header:hover .btn-collapse-toggle {

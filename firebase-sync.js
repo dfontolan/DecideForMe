@@ -60,6 +60,7 @@ let currentUser = null;
 let unsubscribeDoc = null;
 let saveTimer = null;
 let pendingState = null;
+let activeFlushPromise = null;
 let lastSyncedJson = "";
 let pendingPreSignInLocalState = null;
 let isExplicitSignOut = false;
@@ -177,52 +178,93 @@ function isUntouchedDefaultState(s) {
   return !hasLogs && !hasScheduled && !hasProc && !hasStars && !hasNotes && !hasRerolls;
 }
 
-function mergeById(primary = [], secondary = []) {
+const TOMBSTONE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+function mergeDeletedIds(cloudDeleted = {}, localDeleted = {}) {
+  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+  const merged = {};
+  [cloudDeleted, localDeleted].forEach((source) => {
+    if (!source || typeof source !== "object") return;
+    Object.entries(source).forEach(([id, ts]) => {
+      if (typeof ts === "number" && ts >= cutoff) {
+        if (!merged[id] || ts > merged[id]) {
+          merged[id] = ts;
+        }
+      }
+    });
+  });
+  return merged;
+}
+
+function mergeById(primary = [], secondary = [], deletedIds = {}) {
   const map = new Map();
   primary.forEach((item) => {
-    if (item && item.id) map.set(item.id, item);
+    if (item && item.id && !deletedIds[item.id]) map.set(item.id, item);
   });
   secondary.forEach((item) => {
-    if (item && item.id && !map.has(item.id)) {
+    if (item && item.id && !deletedIds[item.id] && !map.has(item.id)) {
       map.set(item.id, item);
     }
   });
   return Array.from(map.values());
 }
 
-function mergeLists(cloudLists = [], localLists = []) {
+function mergeLists(cloudLists = [], localLists = [], deletedIds = {}) {
   const byId = new Map();
   cloudLists.forEach((l) => {
-    if (l && l.id) byId.set(l.id, { ...l, items: Array.isArray(l.items) ? [...l.items] : [] });
+    if (l && l.id && !deletedIds[l.id]) {
+      const items = Array.isArray(l.items)
+        ? l.items.filter((i) => i && i.id && !deletedIds[i.id])
+        : [];
+      byId.set(l.id, { ...l, items });
+    }
   });
   localLists.forEach((l) => {
-    if (!l || !l.id) return;
+    if (!l || !l.id || deletedIds[l.id]) return;
+    const localItems = Array.isArray(l.items)
+      ? l.items.filter((i) => i && i.id && !deletedIds[i.id])
+      : [];
     if (!byId.has(l.id)) {
-      byId.set(l.id, { ...l, items: Array.isArray(l.items) ? [...l.items] : [] });
+      byId.set(l.id, { ...l, items: localItems });
     } else {
       const existing = byId.get(l.id);
-      existing.items = mergeById(existing.items, Array.isArray(l.items) ? l.items : []);
+      existing.items = mergeById(existing.items, localItems, deletedIds);
     }
   });
   return Array.from(byId.values());
 }
 
-function mergeLocalAndCloudState(localState, cloudState) {
+function mergeLocalAndCloudState(localState, cloudState, preferLocal = false) {
   if (!cloudState) return localState;
-  if (!localState || isUntouchedDefaultState(localState)) return cloudState;
+  if (!localState || (!preferLocal && isUntouchedDefaultState(localState))) return cloudState;
+
+  const cloudResetAt = typeof cloudState.resetAt === "number" ? cloudState.resetAt : 0;
+  const localResetAt = typeof localState.resetAt === "number" ? localState.resetAt : 0;
+  if (cloudResetAt > localResetAt) return cloudState;
+  if (localResetAt > cloudResetAt) return localState;
+
+  const deletedIds = mergeDeletedIds(cloudState.deletedIds, localState.deletedIds);
+  const primary = preferLocal ? localState : cloudState;
+  const secondary = preferLocal ? cloudState : localState;
 
   return {
-    ...cloudState,
-    lists: mergeLists(cloudState.lists, localState.lists),
-    dailyTasks: mergeById(cloudState.dailyTasks, localState.dailyTasks),
-    scheduledTasks: mergeById(cloudState.scheduledTasks, localState.scheduledTasks),
-    procrastinationTasks: mergeById(cloudState.procrastinationTasks, localState.procrastinationTasks),
-    logs: mergeById(cloudState.logs, localState.logs).sort(
+    ...primary,
+    deletedIds,
+    resetAt: cloudResetAt,
+    lists: mergeLists(primary.lists, secondary.lists, deletedIds),
+    dailyTasks: mergeById(primary.dailyTasks, secondary.dailyTasks, deletedIds),
+    scheduledTasks: mergeById(primary.scheduledTasks, secondary.scheduledTasks, deletedIds),
+    procrastinationTasks: mergeById(
+      primary.procrastinationTasks,
+      secondary.procrastinationTasks,
+      deletedIds
+    ),
+    logs: mergeById(primary.logs, secondary.logs, deletedIds).sort(
       (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
     ),
-    dailyStarsByDate: { ...(localState.dailyStarsByDate || {}), ...(cloudState.dailyStarsByDate || {}) },
-    dailyNotesByDate: { ...(localState.dailyNotesByDate || {}), ...(cloudState.dailyNotesByDate || {}) },
-    rerollsByDate: { ...(localState.rerollsByDate || {}), ...(cloudState.rerollsByDate || {}) }
+    dailyStarsByDate: { ...(secondary.dailyStarsByDate || {}), ...(primary.dailyStarsByDate || {}) },
+    dailyNotesByDate: { ...(secondary.dailyNotesByDate || {}), ...(primary.dailyNotesByDate || {}) },
+    rerollsByDate: { ...(secondary.rerollsByDate || {}), ...(primary.rerollsByDate || {}) }
   };
 }
 
@@ -233,40 +275,67 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
     setSyncStatus("synced");
     return;
   }
-  setSyncStatus("syncing");
-  await setDoc(doc(db, "users", user.uid), {
-    state: sanitized,
-    accountType: getAccountType(user),
-    updatedAt: serverTimestamp()
-  });
+  const prevSyncedJson = lastSyncedJson;
   lastSyncedJson = json;
-  setSyncStatus("synced");
+  setSyncStatus("syncing");
+  try {
+    await setDoc(doc(db, "users", user.uid), {
+      state: sanitized,
+      accountType: getAccountType(user),
+      updatedAt: serverTimestamp()
+    });
+    setSyncStatus("synced");
+  } catch (err) {
+    if (lastSyncedJson === json) {
+      lastSyncedJson = prevSyncedJson;
+    }
+    throw err;
+  }
 }
 
 function scheduleSave(stateObj) {
   if (!currentUser) return;
-  pendingState = stateObj;
+  pendingState = sanitizeForFirestore(stateObj);
   setSyncStatus("syncing");
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    saveTimer = null;
     flushSave();
   }, 400);
 }
 
-async function flushSave() {
+function flushSave() {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  if (!currentUser || !pendingState) return;
-  const toSave = pendingState;
-  pendingState = null;
-  try {
-    await writeStateToFirestore(currentUser, toSave);
-  } catch (err) {
-    console.warn("Firestore save deferred/failed:", err);
-    setSyncStatus("error");
+  if (activeFlushPromise) {
+    return activeFlushPromise;
   }
+  if (!currentUser || !pendingState) {
+    return Promise.resolve();
+  }
+
+  activeFlushPromise = (async () => {
+    try {
+      while (currentUser && pendingState) {
+        if (saveTimer) {
+          clearTimeout(saveTimer);
+          saveTimer = null;
+        }
+        const toSave = pendingState;
+        pendingState = null;
+        await writeStateToFirestore(currentUser, toSave);
+      }
+    } catch (err) {
+      console.warn("Firestore save deferred/failed:", err);
+      setSyncStatus("error");
+    } finally {
+      activeFlushPromise = null;
+    }
+  })();
+
+  return activeFlushPromise;
 }
 
 async function attachUserSync(user) {
@@ -276,16 +345,23 @@ async function attachUserSync(user) {
   }
 
   const userRef = doc(db, "users", user.uid);
-  const localBefore = pendingPreSignInLocalState || window.DecideForMeApp?.getState();
+  const preSignInState = pendingPreSignInLocalState;
   pendingPreSignInLocalState = null;
 
   try {
     setSyncStatus("syncing");
     const snap = await getDoc(userRef);
+    const hasPendingLocal = Boolean(saveTimer || pendingState || activeFlushPromise);
+    const localLatest = preSignInState || window.DecideForMeApp?.getState();
 
     if (!snap.exists()) {
-      if (localBefore) {
-        await writeStateToFirestore(user, localBefore, true);
+      if (localLatest) {
+        if (saveTimer) {
+          clearTimeout(saveTimer);
+          saveTimer = null;
+        }
+        pendingState = null;
+        await writeStateToFirestore(user, localLatest, true);
       }
     } else {
       const cloudData = snap.data();
@@ -294,16 +370,24 @@ async function attachUserSync(user) {
         cloudData?.accountType !== getAccountType(user);
 
       if (cloudState) {
-        const merged = mergeLocalAndCloudState(localBefore, cloudState);
+        const merged = mergeLocalAndCloudState(localLatest, cloudState, hasPendingLocal);
         const mergedJson = JSON.stringify(sanitizeForFirestore(merged));
         const cloudJson = JSON.stringify(sanitizeForFirestore(cloudState));
+        const localJson = localLatest ? JSON.stringify(sanitizeForFirestore(localLatest)) : "";
 
         lastSyncedJson = cloudJson;
-        window.DecideForMeApp?.applyCloudState(merged);
+        if (mergedJson !== localJson) {
+          window.DecideForMeApp?.applyCloudState(merged);
+        }
 
         if (mergedJson !== cloudJson || needsMetadataUpdate) {
+          if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+          }
+          pendingState = null;
           await writeStateToFirestore(user, merged, needsMetadataUpdate);
-          if (mergedJson !== cloudJson) {
+          if (mergedJson !== cloudJson && !hasPendingLocal) {
             notifyToast("Local data merged with your cloud account!");
           }
         } else {
@@ -320,6 +404,7 @@ async function attachUserSync(user) {
     userRef,
     (snapshot) => {
       if (!snapshot.exists() || snapshot.metadata.hasPendingWrites) return;
+      if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
       const remoteState = snapshot.data()?.state;
       if (!remoteState) return;
       const remoteJson = JSON.stringify(sanitizeForFirestore(remoteState));
