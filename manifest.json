@@ -1,7 +1,7 @@
 {
   "name": "DecideForMe — Activity Picker & Habit Logger",
   "short_name": "DecideForMe",
-  "description": "Local-first free-time activity picker, weighted dice roller, daily task checklist, and calendar habit logger.",
+  "description": "Activity Picker, Task Tracker & Habit Logger",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

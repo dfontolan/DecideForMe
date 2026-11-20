@@ -8,6 +8,8 @@ const DAILY_RESET_HOUR = 3; // 3:00 AM local time daily reset
 const ROLL_DURATION_MS = 3000; // Total roll animation duration in milliseconds (change this single number to speed up or slow down)
 const STREAK_FREEZE_INTERVAL = 3; // Consecutive active streak days required to earn +1 Streak Freeze
 const MAX_STREAK_FREEZES = 3; // Maximum Streak Freezes a user can hold at once
+const PROCRASTINATION_LIST_ID = "__procrastination__";
+const PROCRASTINATION_LIST_COLOR = "#f97316";
 
 const ICON_EDIT_SVG = `<svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>`;
 const ICON_TRASH_SVG = `<svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>`;
@@ -132,12 +134,22 @@ function createDefaultState() {
     theme: "dark",
     calendarView: "month", // "month" | "week"
     activeListId: "list_30m",
+    heroListIds: ["list_30m"],
     activeDecision: null,
     lastDailyResetDate: getLogicalTodayStr(),
     rerollsByDate: {}, // { "YYYY-MM-DD": number }
     dailyTasks: createDefaultDailyTasks(),
+    scheduledTasks: [], // One-time & repeating To-Do / Schedule tasks
+    procrastinationTasks: [], // One-time procrastination tasks (vanish next day after completion)
     dailyStarsByDate: {}, // { "YYYY-MM-DD": true }
     dailyNotesByDate: {}, // { "YYYY-MM-DD": string }
+    collapsedCards: {
+      activityLists: false,
+      dailyTasks: false,
+      scheduledTasks: false,
+      procrastination: false,
+      insights: true
+    },
     lists: createDefaultLists(),
     logs: []
   };
@@ -146,6 +158,7 @@ function createDefaultState() {
 // Application Runtime State
 let state = loadState();
 let selectedListModalColor = PALETTE[0];
+let selectedModalWeight = 1;
 let isRolling = false;
 let completingDecisionSnapshot = null;
 let completingDecisionTimers = [];
@@ -154,11 +167,17 @@ let modalMode = "create"; // "create" | "rename"
 let draggedListId = null;
 let draggedItemId = null;
 let draggedDailyId = null;
+let draggedScheduledId = null;
+let draggedProcrastId = null;
 let quickLogFilterListId = "ALL";
 let pendingConfirmAction = null;
 let pendingInputAction = null;
 let isEditingActivities = false;
 let isEditingDailyTasks = false;
+let isEditingScheduledTasks = false;
+let isEditingProcrastination = false;
+let scheduledViewMode = "today"; // "today" | "upcoming"
+let editingScheduledTaskId = null;
 
 // Calendar navigation state (initialized to logical today)
 const initialLogicalToday = getLogicalTodayDate();
@@ -191,7 +210,7 @@ function loadState() {
       return createDefaultState();
     }
     parsed.logs = Array.isArray(parsed.logs) ? parsed.logs : [];
-    parsed.theme = parsed.theme || "dark";
+    parsed.theme = normalizeTheme(parsed.theme);
     parsed.calendarView = parsed.calendarView === "week" ? "week" : "month";
     parsed.rerollsByDate =
       parsed.rerollsByDate && typeof parsed.rerollsByDate === "object"
@@ -200,6 +219,12 @@ function loadState() {
     parsed.dailyTasks = Array.isArray(parsed.dailyTasks)
       ? parsed.dailyTasks
       : createDefaultDailyTasks();
+    parsed.scheduledTasks = Array.isArray(parsed.scheduledTasks)
+      ? parsed.scheduledTasks
+      : [];
+    parsed.procrastinationTasks = Array.isArray(parsed.procrastinationTasks)
+      ? parsed.procrastinationTasks
+      : [];
     parsed.dailyStarsByDate =
       parsed.dailyStarsByDate && typeof parsed.dailyStarsByDate === "object"
         ? parsed.dailyStarsByDate
@@ -208,6 +233,16 @@ function loadState() {
       parsed.dailyNotesByDate && typeof parsed.dailyNotesByDate === "object"
         ? parsed.dailyNotesByDate
         : {};
+    parsed.collapsedCards = {
+      activityLists: Boolean(parsed.collapsedCards && parsed.collapsedCards.activityLists),
+      dailyTasks: Boolean(parsed.collapsedCards && parsed.collapsedCards.dailyTasks),
+      scheduledTasks: Boolean(parsed.collapsedCards && parsed.collapsedCards.scheduledTasks),
+      procrastination: Boolean(parsed.collapsedCards && parsed.collapsedCards.procrastination),
+      insights:
+        parsed.collapsedCards && "insights" in parsed.collapsedCards
+          ? Boolean(parsed.collapsedCards.insights)
+          : true
+    };
 
     if (parsed.templateVersion !== TEMPLATE_VERSION) {
       parsed.lists = createDefaultLists();
@@ -219,6 +254,24 @@ function loadState() {
     normalizeLists(parsed.lists);
     if (!parsed.lists.some((l) => l.id === parsed.activeListId)) {
       parsed.activeListId = parsed.lists[0].id;
+    }
+    if (!Array.isArray(parsed.heroListIds) || parsed.heroListIds.length === 0) {
+      if (parsed.heroListId === PROCRASTINATION_LIST_ID) {
+        parsed.heroListIds = [PROCRASTINATION_LIST_ID];
+      } else if (parsed.lists.some((l) => l.id === parsed.heroListId)) {
+        parsed.heroListIds = [parsed.heroListId];
+      } else {
+        parsed.heroListIds = [parsed.activeListId];
+      }
+    } else if (parsed.heroListIds.includes(PROCRASTINATION_LIST_ID)) {
+      parsed.heroListIds = [PROCRASTINATION_LIST_ID];
+    } else {
+      parsed.heroListIds = parsed.heroListIds.filter((id) =>
+        parsed.lists.some((l) => l.id === id)
+      );
+      if (parsed.heroListIds.length === 0) {
+        parsed.heroListIds = [parsed.activeListId];
+      }
     }
     return parsed;
   } catch (err) {
@@ -261,6 +314,19 @@ function checkAndPerformDailyReset(shouldRender = false) {
       task.doneToday = false;
     });
 
+    // Clean up completed one-time scheduled tasks from prior days
+    state.scheduledTasks = (state.scheduledTasks || []).filter((task) => {
+      if (task.type !== "once") return true;
+      const completedKeys = task.completedDates
+        ? Object.keys(task.completedDates).filter((k) => task.completedDates[k])
+        : [];
+      if (completedKeys.length === 0) return true;
+      return completedKeys.some((k) => k >= currentLogicalToday);
+    });
+
+    // Completed procrastination tasks vanish on the next logical day
+    state.procrastinationTasks = (state.procrastinationTasks || []).filter((t) => !t.doneToday);
+
     state.activeDecision = null;
     state.lastDailyResetDate = currentLogicalToday;
 
@@ -302,13 +368,85 @@ function checkAndPerformDailyReset(shouldRender = false) {
  * - While logical today is still in progress (not yet completed), it does not
  *   consume a freeze or break the streak.
  */
+function isTaskDueOnDate(task, dateStr) {
+  if (!task) return false;
+  if (task.type === "once") {
+    return task.dueDate === dateStr;
+  }
+  if (task.type === "repeat") {
+    if (task.createdAt && dateStr < task.createdAt) {
+      return false;
+    }
+    const d = parseLocalDateStr(dateStr);
+    const rule = task.repeatRule || {};
+    if (rule.freq === "monthly") {
+      const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      const targetDay = Math.min(Math.max(1, Number(rule.monthDay) || 1), daysInMonth);
+      return d.getDate() === targetDay;
+    }
+    const weekday = (d.getDay() + 6) % 7; // 0=Mon .. 6=Sun
+    const weekdays = Array.isArray(rule.weekdays) ? rule.weekdays : [];
+    return weekdays.includes(weekday);
+  }
+  return false;
+}
+
+function isScheduledTaskDoneOnDate(task, dateStr) {
+  return Boolean(task && task.completedDates && task.completedDates[dateStr]);
+}
+
+function getScheduledTaskTargetDate(task, todayStr) {
+  if (!task) return todayStr;
+  if (task.type === "once") {
+    return task.dueDate && task.dueDate > todayStr ? task.dueDate : todayStr;
+  }
+  if (isTaskDueOnDate(task, todayStr)) {
+    return todayStr;
+  }
+  const cursor = parseLocalDateStr(todayStr);
+  for (let i = 1; i <= 35; i++) {
+    cursor.setDate(cursor.getDate() + 1);
+    const dStr = toLocalDateStr(cursor);
+    if (isTaskDueOnDate(task, dStr)) return dStr;
+  }
+  return todayStr;
+}
+
+function isScheduledTaskOverdue(task, todayStr) {
+  return (
+    task &&
+    task.type === "once" &&
+    Boolean(task.dueDate) &&
+    task.dueDate < todayStr &&
+    !isScheduledTaskDoneOnDate(task, task.dueDate) &&
+    !isScheduledTaskDoneOnDate(task, todayStr)
+  );
+}
+
+function areAllScheduledTasksDoneForDate(dateStr) {
+  const tasks = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+  const dueTasks = tasks.filter((t) => isTaskDueOnDate(t, dateStr));
+  return dueTasks.length === 0 || dueTasks.every((t) => isScheduledTaskDoneOnDate(t, dateStr));
+}
+
+function getStarStatusForDate(dateStr, hasActivity) {
+  const hasDailyTasksDone = Boolean(state.dailyStarsByDate[dateStr]);
+  const scheduledDone = areAllScheduledTasksDoneForDate(dateStr);
+  const hasGoldStar = hasDailyTasksDone && hasActivity && scheduledDone;
+  const hasSilverStar = hasDailyTasksDone && !hasGoldStar;
+  return { hasDailyTasksDone, scheduledDone, hasGoldStar, hasSilverStar };
+}
+
 function computeStreakAndFreezes(nowObj = new Date()) {
   const requireDailyStar = state.dailyTasks.length > 0;
   const qualifyingDates = Array.from(
     new Set(
       state.logs
         .map((l) => l.date)
-        .filter((dStr) => !requireDailyStar || Boolean(state.dailyStarsByDate[dStr]))
+        .filter((dStr) => {
+          const dailyOk = !requireDailyStar || Boolean(state.dailyStarsByDate[dStr]);
+          return dailyOk && areAllScheduledTasksDoneForDate(dStr);
+        })
     )
   ).sort();
   const qualifyingSet = new Set(qualifyingDates);
@@ -412,14 +550,19 @@ function evaluateTodayDailyStar(announceIfEarned = false) {
   const allDailyTasksDone =
     state.dailyTasks.length > 0 && state.dailyTasks.every((t) => Boolean(t.doneToday));
   const hasActivityLoggedToday = state.logs.some((l) => l.date === todayStr);
+  const scheduledDoneToday = areAllScheduledTasksDoneForDate(todayStr);
 
   if (allDailyTasksDone) {
     state.dailyStarsByDate[todayStr] = true;
     if (!hadDailyTasksDone && announceIfEarned) {
-      if (hasActivityLoggedToday) {
-        showToast("⭐ Gold Daily Star earned! All Daily Tasks + Activity completed today!");
-      } else {
+      if (hasActivityLoggedToday && scheduledDoneToday) {
+        showToast("⭐ Gold Daily Star earned! All Daily Tasks, Scheduled Tasks + Activity completed today!");
+      } else if (!hasActivityLoggedToday && !scheduledDoneToday) {
+        showToast("★ Silver Star earned! Complete an activity & today's scheduled tasks to upgrade to Gold!");
+      } else if (!hasActivityLoggedToday) {
         showToast("★ Silver Star earned! Complete an activity today to upgrade to a Gold Star & streak!");
+      } else {
+        showToast("★ Silver Star earned! Finish today's To-Do & Schedule tasks to upgrade to Gold!");
       }
     }
   } else {
@@ -431,7 +574,73 @@ function getActiveList() {
   return state.lists.find((l) => l.id === state.activeListId) || state.lists[0];
 }
 
+function getHeroSelectedIds() {
+  const raw = Array.isArray(state.heroListIds) ? state.heroListIds : [];
+  if (raw.includes(PROCRASTINATION_LIST_ID)) {
+    return [PROCRASTINATION_LIST_ID];
+  }
+  const validIds = raw.filter((id) => state.lists.some((l) => l.id === id));
+  if (validIds.length > 0) return validIds;
+  return [getActiveList().id];
+}
+
+function getActiveHeroPool() {
+  const selectedIds = getHeroSelectedIds();
+  if (selectedIds[0] === PROCRASTINATION_LIST_ID) {
+    const tasks = Array.isArray(state.procrastinationTasks) ? state.procrastinationTasks : [];
+    return {
+      id: PROCRASTINATION_LIST_ID,
+      name: "Procrastination List",
+      color: PROCRASTINATION_LIST_COLOR,
+      isProcrastination: true,
+      isMultiList: false,
+      selectedIds,
+      items: tasks
+        .filter((t) => !t.doneToday)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          checked: true,
+          weight: 1,
+          listId: PROCRASTINATION_LIST_ID,
+          listName: "Procrastination List",
+          listColor: PROCRASTINATION_LIST_COLOR
+        }))
+    };
+  }
+
+  const selectedLists = selectedIds
+    .map((id) => state.lists.find((l) => l.id === id))
+    .filter(Boolean);
+  const primary = selectedLists[0] || getActiveList();
+  const isMultiList = selectedLists.length > 1;
+  const combinedItems = [];
+
+  selectedLists.forEach((list) => {
+    const listColor = list.color || PALETTE[0];
+    list.items.forEach((item) => {
+      combinedItems.push({
+        ...item,
+        listId: list.id,
+        listName: list.name,
+        listColor
+      });
+    });
+  });
+
+  return {
+    id: primary.id,
+    name: isMultiList ? `${selectedLists.length} Lists` : primary.name,
+    color: primary.color || PALETTE[0],
+    isProcrastination: false,
+    isMultiList,
+    selectedIds,
+    items: combinedItems
+  };
+}
+
 function getListColor(listId, fallback = PALETTE[0]) {
+  if (listId === PROCRASTINATION_LIST_ID) return PROCRASTINATION_LIST_COLOR;
   const list = state.lists.find((l) => l.id === listId);
   return (list && list.color) || fallback;
 }
@@ -484,14 +693,29 @@ function hideCalendarTooltip() {
   }
 }
 
+function setModalWeight(weight) {
+  selectedModalWeight = normalizeWeight(weight);
+  const weightBtns = document.querySelectorAll("#modal-list-weights .weight-pill-btn");
+  weightBtns.forEach((btn) => {
+    const isMatch = Number(btn.dataset.weight) === selectedModalWeight;
+    btn.classList.toggle("is-selected", isMatch);
+    btn.setAttribute("aria-checked", isMatch ? "true" : "false");
+  });
+}
+
 // Input / Rename Pop-up Modal
 function openInputModal({
   title,
   label,
   initialValue = "",
   placeholder = "",
+  maxLength = 80,
+  saveLabel = "Save",
   showColorPicker = false,
   initialColor = PALETTE[0],
+  showWeightPicker = false,
+  initialWeight = 1,
+  showAddAnother = false,
   onSave
 }) {
   document.getElementById("modal-list-title").textContent = title;
@@ -500,6 +724,7 @@ function openInputModal({
   const inputEl = document.getElementById("input-list-name");
   inputEl.value = initialValue;
   inputEl.placeholder = placeholder;
+  inputEl.maxLength = maxLength;
 
   const colorSection = document.getElementById("modal-list-color-section");
   if (colorSection) {
@@ -509,6 +734,20 @@ function openInputModal({
       renderListModalColorPicker();
     }
   }
+
+  const weightSection = document.getElementById("modal-list-weight-section");
+  if (weightSection) {
+    weightSection.classList.toggle("hidden", !showWeightPicker);
+    if (showWeightPicker) {
+      setModalWeight(initialWeight);
+    }
+  }
+
+  const saveBtn = document.getElementById("btn-modal-save");
+  if (saveBtn) saveBtn.textContent = saveLabel;
+
+  const addAnotherBtn = document.getElementById("btn-modal-add-another");
+  if (addAnotherBtn) addAnotherBtn.classList.toggle("hidden", !showAddAnother);
 
   pendingInputAction = onSave;
   document.getElementById("modal-list").classList.remove("hidden");
@@ -534,6 +773,20 @@ function closeConfirmModal() {
   document.getElementById("modal-confirm").classList.add("hidden");
 }
 
+function openAboutModal() {
+  const modal = document.getElementById("modal-about");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
+}
+
+function closeAboutModal() {
+  const modal = document.getElementById("modal-about");
+  if (modal) {
+    modal.classList.add("hidden");
+  }
+}
+
 // Toast Notification
 function showToast(message) {
   const container = document.getElementById("toast-container");
@@ -547,21 +800,239 @@ function showToast(message) {
 }
 
 // Theme Handling
+const ASTROLOGY_DAY_PROMPTS = [
+  // 0: Sunday (Sun)
+  [
+    "What is the Sun calling me to do?",
+    "What does the Sun call for?",
+    "What would the Sun have me pursue?"
+  ],
+  // 1: Monday (Moon)
+  [
+    "What is the Moon guiding me to do?",
+    "What does the Moon ask?",
+    "What would the Moon have me tend to?"
+  ],
+  // 2: Tuesday (Mars)
+  [
+    "What is Mars daring me to do?",
+    "What does Mars demand?",
+    "What would Mars have me tackle?"
+  ],
+  // 3: Wednesday (Mercury)
+  [
+    "What is Mercury nudging me to do?",
+    "What does Mercury propose?",
+    "What would Mercury have me explore?"
+  ],
+  // 4: Thursday (Jupiter)
+  [
+    "What is Jupiter inviting me to do?",
+    "What does Jupiter encourage?",
+    "What would Jupiter have me embrace?"
+  ],
+  // 5: Friday (Venus)
+  [
+    "What is Venus tempting me to do?",
+    "What does Venus wish for?",
+    "What would Venus have me indulge in?"
+  ],
+  // 6: Saturday (Saturn)
+  [
+    "What is Saturn expecting me to do?",
+    "What does Saturn assign?",
+    "What would Saturn have me complete?"
+  ]
+];
+
+let astrologyHeroPromptIndex = Math.floor(Math.random() * 3);
+
+function getAstrologyHeroTitle() {
+  const dayIdx = getLogicalTodayDate().getDay();
+  const options = ASTROLOGY_DAY_PROMPTS[dayIdx] || ASTROLOGY_DAY_PROMPTS[0];
+  return options[astrologyHeroPromptIndex % options.length];
+}
+
+const TAROT_HERO_PROMPTS = [
+  "What card does fate turn over next?",
+  "The deck is shuffled. What will you draw?",
+  "Which Arcana guides your next move?",
+  "Cut the deck and see what awaits.",
+  "What omen lies face-down on the table?",
+  "The Major Arcana are watching. Draw a card.",
+  "What destiny sits at the top of the deck?",
+  "Pull a card from the spread of today.",
+  "What does the next card reveal?",
+  "A card waits to be turned. What is it?"
+];
+
+let tarotHeroPromptIndex = Math.floor(Math.random() * TAROT_HERO_PROMPTS.length);
+
+function getTarotHeroTitle() {
+  return TAROT_HERO_PROMPTS[tarotHeroPromptIndex % TAROT_HERO_PROMPTS.length];
+}
+
+const ASTROLOGY_QUIPS = [
+  "Mercury is in microwave, so you must do this.",
+  "Venus demands it. Do not argue with a planet.",
+  "Saturn looked at your to-do list and sighed. Proceed.",
+  "Your aura is 73% chaotic today — this will balance your vibes.",
+  "Moon in Sagittarius says: no excuses, bestie.",
+  "Jupiter aligned with your snack drawer. Destiny calls.",
+  "The cosmos checked your birth chart and said 'just do the thing.'",
+  "A mysterious comet whispered that this is your main-character arc."
+];
+
+const TAROT_QUIPS = [
+  "The Fool says: leap first, overthink never.",
+  "The Magician reminds you: you already have the tools. Now start.",
+  "The Hermit approves of this quiet quest.",
+  "The Chariot demands momentum — no stalling.",
+  "Wheel of Fortune spun in your favor. Take the hint.",
+  "Strength isn't brute force — it's finally doing this task.",
+  "The Tower wouldn't collapse if you just knocked this out.",
+  "The Star says: good vibes ahead once this is logged.",
+  "Justice has weighed your excuses and found them lacking.",
+  "The World awaits on the other side of completing this."
+];
+
+function normalizeTheme(theme) {
+  if (theme === "astrology" || theme === "tarot") return theme;
+  return "dark";
+}
+
+function isAstrologyTheme() {
+  return state.theme === "astrology";
+}
+
+function isTarotTheme() {
+  return state.theme === "tarot";
+}
+
+function pickSeededQuip(decision, quips) {
+  if (!decision) return quips[0];
+  const seedStr = `${decision.itemId || ""}|${decision.title || ""}|${decision.rerolls || 0}|${getLogicalTodayStr()}`;
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
+  }
+  return quips[hash % quips.length];
+}
+
+function getThemeQuip(decision) {
+  if (isAstrologyTheme()) return pickSeededQuip(decision, ASTROLOGY_QUIPS);
+  if (isTarotTheme()) return pickSeededQuip(decision, TAROT_QUIPS);
+  return "";
+}
+
+function applyThemeCopy() {
+  const astro = isAstrologyTheme();
+  const tarot = isTarotTheme();
+
+  const brandSubtitle = document.querySelector(".brand-subtitle");
+  if (brandSubtitle) {
+    brandSubtitle.textContent = astro
+      ? "The stars have opinions. Let the cosmos decide."
+      : tarot
+        ? "Shuffle the deck. Let the cards decide."
+        : "Check what you're up for, and roll the dice.";
+  }
+
+  const heroIdleTitle = document.getElementById("hero-idle-title");
+  if (heroIdleTitle) {
+    heroIdleTitle.textContent = astro
+      ? getAstrologyHeroTitle()
+      : tarot
+        ? getTarotHeroTitle()
+        : "What should we do next?";
+  }
+
+  const decideDiceIcon = document.getElementById("decide-dice-icon");
+  if (decideDiceIcon) {
+    decideDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : "🎲";
+  }
+
+  const decideLabel = document.getElementById("btn-decide-label");
+  if (decideLabel) {
+    decideLabel.textContent = astro
+      ? "Consult the Stars!"
+      : tarot
+        ? "Draw a Card!"
+        : "Decide For Me!";
+  }
+
+  const rollingDiceIcon = document.getElementById("rolling-dice-icon");
+  if (rollingDiceIcon) {
+    rollingDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : "🎲";
+  }
+
+  const rollingLabelText = document.getElementById("rolling-label-text");
+  if (rollingLabelText) {
+    rollingLabelText.textContent = astro
+      ? "Aligning your chakras & blaming Mercury..."
+      : tarot
+        ? "Shuffling the Major Arcana..."
+        : "Rolling your checked pool...";
+  }
+
+  const rerollLabel = document.getElementById("btn-reroll-label");
+  if (rerollLabel) {
+    rerollLabel.textContent = astro
+      ? "🌙 Defy Fate (Re-roll)"
+      : tarot
+        ? "🃏 Draw Another (Re-roll)"
+        : "🎲 Re-roll";
+  }
+
+  const sectionLabels = [
+    ["section-label-activity-lists", "✨ Sacred Scrolls", "🃏 The Deck", "Activity Lists"],
+    ["section-label-daily-tasks", "🕯️ Daily Rituals", "🕯️ Daily Spread", "Daily Checklist"],
+    ["section-label-scheduled-tasks", "📜 Destiny & Deadlines", "📜 Fate & Appointments", "To-Do & Schedule"],
+    ["section-label-procrastination", "🕳️ The Void (Procrastination)", "🌑 Reversed Cards (Procrastination)", "Procrastination List"]
+  ];
+  sectionLabels.forEach(([id, astroText, tarotText, darkText]) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = astro ? astroText : tarot ? tarotText : darkText;
+    }
+  });
+}
+
 function applyTheme() {
+  state.theme = normalizeTheme(state.theme);
   document.documentElement.setAttribute("data-theme", state.theme);
-  const nextIcon = state.theme === "dark" ? "☀️" : "🌙";
+  const currentThemeMeta =
+    state.theme === "astrology"
+      ? { icon: "🔮", label: "Astrology Theme", metaColor: "#0c071b" }
+      : state.theme === "tarot"
+        ? { icon: "🃏", label: "Tarot Theme", metaColor: "#12090d" }
+        : { icon: "🌙", label: "Dark Theme", metaColor: "#0f1117" };
   const icon = document.getElementById("theme-icon");
   if (icon) {
-    icon.textContent = nextIcon;
+    icon.textContent = currentThemeMeta.icon;
+  }
+  const label = document.getElementById("theme-label");
+  if (label) {
+    label.textContent = currentThemeMeta.label;
   }
   const footerIcon = document.getElementById("theme-icon-footer");
   if (footerIcon) {
-    footerIcon.textContent = nextIcon;
+    footerIcon.textContent = currentThemeMeta.icon;
   }
+  const footerLabel = document.getElementById("theme-label-footer");
+  if (footerLabel) {
+    footerLabel.textContent = currentThemeMeta.label;
+  }
+  document.querySelectorAll(".theme-option").forEach((opt) => {
+    const isActive = opt.dataset.themeValue === state.theme;
+    opt.classList.toggle("is-active", isActive);
+    opt.setAttribute("aria-checked", isActive ? "true" : "false");
+  });
   const metaThemeColor = document.getElementById("meta-theme-color");
   if (metaThemeColor) {
-    metaThemeColor.setAttribute("content", state.theme === "dark" ? "#0f1117" : "#eaeef5");
+    metaThemeColor.setAttribute("content", currentThemeMeta.metaColor);
   }
+  applyThemeCopy();
 }
 
 /**
@@ -760,11 +1231,14 @@ function renderListTabs() {
 }
 
 // Render Decision Engine Card
-function renderHeroListSwitcherButtons(containerEl, activeList) {
+function renderHeroListSwitcherButtons(containerEl, activePool) {
   if (!containerEl) return;
   containerEl.innerHTML = "";
+  const selectedIds = activePool.selectedIds || getHeroSelectedIds();
+  const isProcrastActive = selectedIds.includes(PROCRASTINATION_LIST_ID);
+
   state.lists.forEach((list) => {
-    const isActive = list.id === activeList.id;
+    const isActive = !isProcrastActive && selectedIds.includes(list.id);
     const listColor = list.color || PALETTE[0];
     const totalCount = list.items.length;
     const checkedCount = list.items.filter((i) => i.checked).length;
@@ -782,12 +1256,50 @@ function renderHeroListSwitcherButtons(containerEl, activeList) {
     `;
     btn.addEventListener("click", () => {
       if (isRolling) return;
+      const current = getHeroSelectedIds();
+      if (current.includes(PROCRASTINATION_LIST_ID)) {
+        state.heroListIds = [list.id];
+      } else if (current.includes(list.id)) {
+        if (current.length > 1) {
+          state.heroListIds = current.filter((id) => id !== list.id);
+        }
+      } else {
+        state.heroListIds = [...current, list.id];
+      }
       state.activeListId = list.id;
       saveState();
       renderAll();
     });
     containerEl.appendChild(btn);
   });
+
+  // Visual divider separating multi-select Activity Lists from exclusive Procrastination List
+  const dividerEl = document.createElement("span");
+  dividerEl.className = "hero-list-divider";
+  dividerEl.setAttribute("aria-hidden", "true");
+  containerEl.appendChild(dividerEl);
+
+  // Procrastination List switcher pill (exclusive)
+  const procrastTasks = Array.isArray(state.procrastinationTasks) ? state.procrastinationTasks : [];
+  const pendingCount = procrastTasks.filter((t) => !t.doneToday).length;
+  const pBtn = document.createElement("button");
+  pBtn.type = "button";
+  pBtn.role = "tab";
+  pBtn.ariaSelected = isProcrastActive ? "true" : "false";
+  pBtn.className = `hero-list-btn is-procrastination ${isProcrastActive ? "active" : ""}`;
+  pBtn.style.setProperty("--pill-list-color", PROCRASTINATION_LIST_COLOR);
+  pBtn.innerHTML = `
+    <span class="color-dot hero-list-dot" style="background-color: ${PROCRASTINATION_LIST_COLOR}"></span>
+    <span>Procrastination List</span>
+    ${isProcrastActive ? `<span class="hero-count-pill">${pendingCount} pending</span>` : ""}
+  `;
+  pBtn.addEventListener("click", () => {
+    if (isRolling) return;
+    state.heroListIds = [PROCRASTINATION_LIST_ID];
+    saveState();
+    renderAll();
+  });
+  containerEl.appendChild(pBtn);
 }
 
 function renderDecisionCard() {
@@ -796,7 +1308,7 @@ function renderDecisionCard() {
   const rollingEl = document.getElementById("decision-rolling");
   const activeEl = document.getElementById("decision-active");
 
-  const activeList = getActiveList();
+  const activeList = getActiveHeroPool();
   const activeListColor = activeList.color || PALETTE[0];
   const checkedItems = activeList.items.filter((i) => i.checked);
 
@@ -813,7 +1325,10 @@ function renderDecisionCard() {
       candidatePillsEl.innerHTML = checkedItems
         .map((item) => {
           const weight = normalizeWeight(item.weight);
-          return `<span class="hero-candidate-chip" data-item-id="${escapeHtml(item.id)}"><span>${escapeHtml(item.title)}</span>${weight > 1 ? `<span class="hero-chip-weight" data-weight="${weight}">${weight}x</span>` : ""}</span>`;
+          const dotHtml = activeList.isMultiList
+            ? `<span class="color-dot" style="background-color: ${item.listColor || activeListColor}"></span>`
+            : "";
+          return `<span class="hero-candidate-chip" data-item-id="${escapeHtml(item.id)}">${dotHtml}<span>${escapeHtml(item.title)}</span>${weight > 1 ? `<span class="hero-chip-weight" data-weight="${weight}">${weight}x</span>` : ""}</span>`;
         })
         .join("");
     }
@@ -860,6 +1375,17 @@ function renderDecisionCard() {
     activeEl.style.setProperty("--chosen-color", chosenColor);
     document.getElementById("chosen-title").textContent = d.title;
     document.getElementById("chosen-list-subtitle").textContent = `From list: ${d.listName}`;
+    const quipEl = document.getElementById("chosen-theme-quip");
+    if (quipEl) {
+      const quipText = getThemeQuip(d);
+      if (quipText) {
+        quipEl.textContent = isTarotTheme() ? `🃏 ${quipText}` : `✨ ${quipText}`;
+        quipEl.classList.remove("hidden");
+      } else {
+        quipEl.textContent = "";
+        quipEl.classList.add("hidden");
+      }
+    }
     document.getElementById("chosen-probability-meta").textContent =
       `${d.weight}x weight • ${d.probabilityPct}% chance (${d.candidateCount} checked)`;
 
@@ -868,7 +1394,11 @@ function renderDecisionCard() {
       activeEl.classList.add("is-win-hold");
       activeEl.classList.toggle("is-win-exit", completingDecisionSnapshot.phase === "exit");
       if (badgeChosenEl) {
-        badgeChosenEl.textContent = "✓ Completed & Logged!";
+        badgeChosenEl.textContent = isAstrologyTheme()
+          ? "🌟 Prophecy Fulfilled!"
+          : isTarotTheme()
+            ? "🃏 Card Fulfilled!"
+            : "✓ Completed & Logged!";
         badgeChosenEl.classList.add("is-win-logged");
       }
       if (completeChosenBtn) {
@@ -881,12 +1411,28 @@ function renderDecisionCard() {
       cardEl.classList.remove("is-completing-win");
       activeEl.classList.remove("is-win-hold", "is-win-exit");
       if (badgeChosenEl) {
-        badgeChosenEl.textContent = "✨ Chosen Activity";
+        badgeChosenEl.textContent = isAstrologyTheme()
+          ? "🌟 Cosmic Decree"
+          : isTarotTheme()
+            ? "🃏 Drawn Card"
+            : "✨ Chosen Activity";
         badgeChosenEl.classList.remove("is-win-logged");
       }
       if (completeChosenBtn) {
         completeChosenBtn.classList.remove("is-win-hold");
-        completeChosenBtn.innerHTML = `✓ Mark Complete &amp; Log`;
+        if (d.listId === PROCRASTINATION_LIST_ID) {
+          completeChosenBtn.innerHTML = isAstrologyTheme()
+            ? `🎉 Banish from the Void!`
+            : isTarotTheme()
+              ? `🎉 Banish the Shadow!`
+              : `🎉 Mark Done!`;
+        } else {
+          completeChosenBtn.innerHTML = isAstrologyTheme()
+            ? `✨ Fulfill Prophecy &amp; Log`
+            : isTarotTheme()
+              ? `✨ Honor the Card &amp; Log`
+              : `✓ Mark Complete &amp; Log`;
+        }
       }
     }
 
@@ -901,13 +1447,26 @@ function renderDecisionCard() {
   } else {
     cardEl.classList.remove("has-active-choice", "is-completing-win");
     activeEl.classList.remove("is-win-hold", "is-win-exit");
+    const quipEl = document.getElementById("chosen-theme-quip");
+    if (quipEl) {
+      quipEl.textContent = "";
+      quipEl.classList.add("hidden");
+    }
     if (badgeChosenEl) {
-      badgeChosenEl.textContent = "✨ Chosen Activity";
+      badgeChosenEl.textContent = isAstrologyTheme()
+        ? "🌟 Cosmic Decree"
+        : isTarotTheme()
+          ? "🃏 Drawn Card"
+          : "✨ Chosen Activity";
       badgeChosenEl.classList.remove("is-win-logged");
     }
     if (completeChosenBtn) {
       completeChosenBtn.classList.remove("is-win-hold");
-      completeChosenBtn.innerHTML = `✓ Mark Complete &amp; Log`;
+      completeChosenBtn.innerHTML = isAstrologyTheme()
+        ? `✨ Fulfill Prophecy &amp; Log`
+        : isTarotTheme()
+          ? `✨ Honor the Card &amp; Log`
+          : `✓ Mark Complete &amp; Log`;
     }
     idleEl.classList.remove("hidden");
     rollingEl.classList.add("hidden");
@@ -918,15 +1477,17 @@ function renderDecisionCard() {
 // Render Activity Pool Items
 function renderActivityPool() {
   const activeList = getActiveList();
-  document.getElementById("current-list-title").textContent = activeList.name;
   const checkedCount = activeList.items.filter((i) => i.checked).length;
   const countBadge = document.getElementById("current-list-count-badge");
   if (countBadge) {
     countBadge.textContent = `${checkedCount}/${activeList.items.length}`;
   }
-  const headerDot = document.getElementById("current-list-color-dot");
-  if (headerDot) {
-    headerDot.style.backgroundColor = activeList.color || PALETTE[0];
+
+  const toggleCheckAllBtn = document.getElementById("btn-toggle-check-all");
+  if (toggleCheckAllBtn) {
+    const hasItems = activeList.items.length > 0;
+    toggleCheckAllBtn.disabled = !hasItems;
+    toggleCheckAllBtn.textContent = checkedCount > 0 ? "Uncheck All" : "Check All";
   }
 
   const listEl = document.getElementById("activity-list");
@@ -944,8 +1505,13 @@ function renderActivityPool() {
     editActivitiesLabel.textContent = isEditingActivities ? "Done" : "Edit";
   }
 
+  const listManageActions = document.getElementById("list-manage-actions");
+  if (listManageActions) {
+    listManageActions.classList.toggle("hidden", !isEditingActivities);
+  }
+
   if (activeList.items.length === 0) {
-    listEl.innerHTML = `<li class="empty-state">No activities in this list yet. Add one above!</li>`;
+    listEl.innerHTML = `<li class="empty-state">No activities in this list yet. Click + Add New to add one!</li>`;
     return;
   }
 
@@ -984,7 +1550,6 @@ function renderActivityPool() {
         />
         <div class="activity-title-group">
           <span class="activity-title" title="Click to toggle">${escapeHtml(item.title)}</span>
-          ${doneToday ? `<span class="done-today-pill" title="Completed today" aria-label="Completed today">✓</span>` : ""}
         </div>
       </div>
       <div class="activity-right">
@@ -1001,8 +1566,8 @@ function renderActivityPool() {
         </button>
         <button
           type="button"
-          class="btn-icon log-direct-btn"
-          title="Mark '${escapeHtml(item.title)}' as completed today"
+          class="btn-icon log-direct-btn ${doneToday ? "is-done" : ""}"
+          title="${doneToday ? `Completed today — click to log '${escapeHtml(item.title)}' again` : `Mark '${escapeHtml(item.title)}' as completed today`}"
         >
           ✓
         </button>
@@ -1170,8 +1735,9 @@ function renderDailyTasks() {
   const allDone = total > 0 && doneCount === total;
   const todayStr = getLogicalTodayStr();
   const hasActivityToday = state.logs.some((l) => l.date === todayStr);
-  const hasGoldStarToday = allDone && hasActivityToday;
-  const hasSilverStarToday = allDone && !hasActivityToday;
+  const scheduledDoneToday = areAllScheduledTasksDoneForDate(todayStr);
+  const hasGoldStarToday = allDone && hasActivityToday && scheduledDoneToday;
+  const hasSilverStarToday = allDone && !hasGoldStarToday;
 
   cardEl.classList.toggle("all-done", hasGoldStarToday);
   cardEl.classList.toggle("silver-done", hasSilverStarToday);
@@ -1200,7 +1766,6 @@ function renderDailyTasks() {
         <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
         <div class="activity-title-group">
           <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
-          ${task.doneToday ? `<span class="done-today-pill" title="Completed today" aria-label="Completed today">✓</span>` : ""}
         </div>
       </div>
       <div class="daily-task-actions">
@@ -1320,6 +1885,540 @@ function renderDailyTasks() {
           saveState();
           renderAll();
           showToast(`Deleted daily task "${task.title}"`);
+        }
+      );
+    });
+
+    listEl.appendChild(li);
+  });
+}
+
+function formatScheduledTaskMeta(task, todayStr) {
+  if (task.type === "repeat") {
+    const rule = task.repeatRule || {};
+    if (rule.freq === "monthly") {
+      const dayNum = Math.min(Math.max(1, Number(rule.monthDay) || 1), 31);
+      const suffix =
+        dayNum % 10 === 1 && dayNum !== 11
+          ? "st"
+          : dayNum % 10 === 2 && dayNum !== 12
+            ? "nd"
+            : dayNum % 10 === 3 && dayNum !== 13
+              ? "rd"
+              : "th";
+      return { label: `Monthly · ${dayNum}${suffix}`, isRepeat: true, isOverdue: false };
+    }
+    const shortDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const days = Array.isArray(rule.weekdays) ? [...rule.weekdays].sort((a, b) => a - b) : [];
+    const label =
+      days.length === 7
+        ? "Every day"
+        : days.length > 0
+          ? days.map((d) => shortDays[d]).filter(Boolean).join(", ")
+          : "Weekly";
+    return { label, isRepeat: true, isOverdue: false };
+  }
+
+  if (!task.dueDate || task.dueDate === todayStr) {
+    return { label: "Today", isRepeat: false, isOverdue: false };
+  }
+
+  const overdue = isScheduledTaskOverdue(task, todayStr);
+  const d = parseLocalDateStr(task.dueDate);
+  const dateLabel = `${SHORT_MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+  if (overdue) {
+    return { label: `Overdue · ${dateLabel}`, isRepeat: false, isOverdue: true };
+  }
+  return { label: dateLabel, isRepeat: false, isOverdue: false };
+}
+
+function renderScheduledTasks() {
+  const cardEl = document.getElementById("scheduled-tasks-card");
+  const progressBadgeEl = document.getElementById("scheduled-tasks-progress-badge");
+  const listEl = document.getElementById("scheduled-tasks-list");
+  if (!cardEl || !progressBadgeEl || !listEl) return;
+
+  listEl.classList.toggle("is-editing", isEditingScheduledTasks);
+  listEl.innerHTML = "";
+
+  const editBtn = document.getElementById("btn-edit-scheduled");
+  const editLabel = document.getElementById("btn-edit-scheduled-label");
+  if (editBtn) {
+    editBtn.classList.toggle("is-active", isEditingScheduledTasks);
+    editBtn.setAttribute("aria-pressed", isEditingScheduledTasks ? "true" : "false");
+  }
+  if (editLabel) {
+    editLabel.textContent = isEditingScheduledTasks ? "Done" : "Edit";
+  }
+
+  const todayBtn = document.getElementById("btn-sched-view-today");
+  const upcomingBtn = document.getElementById("btn-sched-view-upcoming");
+  if (todayBtn) {
+    todayBtn.classList.toggle("active", scheduledViewMode === "today");
+    todayBtn.setAttribute("aria-selected", scheduledViewMode === "today" ? "true" : "false");
+  }
+  if (upcomingBtn) {
+    upcomingBtn.classList.toggle("active", scheduledViewMode === "upcoming");
+    upcomingBtn.setAttribute("aria-selected", scheduledViewMode === "upcoming" ? "true" : "false");
+  }
+
+  const todayStr = getLogicalTodayStr();
+  const tasks = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+  const dueTodayTasks = tasks.filter((t) => isTaskDueOnDate(t, todayStr));
+  const doneTodayCount = dueTodayTasks.filter((t) => isScheduledTaskDoneOnDate(t, todayStr)).length;
+  const allDueDone = dueTodayTasks.length > 0 && doneTodayCount === dueTodayTasks.length;
+
+  cardEl.classList.toggle("all-done", allDueDone);
+  progressBadgeEl.textContent =
+    dueTodayTasks.length === 0
+      ? "0 due today"
+      : `${doneTodayCount}/${dueTodayTasks.length} done`;
+  progressBadgeEl.classList.toggle("badge-star", allDueDone);
+  progressBadgeEl.classList.toggle("badge-success", false);
+
+  const visibleTasks =
+    scheduledViewMode === "upcoming"
+      ? tasks
+      : tasks.filter((t) => isTaskDueOnDate(t, todayStr) || isScheduledTaskOverdue(t, todayStr));
+
+  if (visibleTasks.length === 0) {
+    const emptyMsg =
+      scheduledViewMode === "upcoming"
+        ? "No scheduled or one-time tasks yet. Click + Add Task to create one!"
+        : "Nothing scheduled for today. Click + Add Task or check Upcoming!";
+    listEl.innerHTML = `<li class="empty-state">${emptyMsg}</li>`;
+    return;
+  }
+
+  visibleTasks.forEach((task) => {
+    const targetDate = getScheduledTaskTargetDate(task, todayStr);
+    const isAhead = targetDate > todayStr;
+    const isDoneForTarget = isScheduledTaskDoneOnDate(task, targetDate);
+    const meta = formatScheduledTaskMeta(task, todayStr);
+
+    const targetDateObj = parseLocalDateStr(targetDate);
+    const targetDateLabel = `${SHORT_MONTH_NAMES[targetDateObj.getMonth()]} ${targetDateObj.getDate()}`;
+    const doneTitle = isAhead ? `Completed ahead (for ${targetDateLabel})` : "Completed today";
+
+    const li = document.createElement("li");
+    li.draggable = isEditingScheduledTasks;
+    li.dataset.schedId = task.id;
+    li.className = [
+      "scheduled-task-item",
+      isDoneForTarget ? "done" : "",
+      meta.isOverdue ? "is-overdue" : ""
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    li.innerHTML = `
+      <div class="daily-task-left">
+        <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
+        <div class="scheduled-task-content">
+          <div class="activity-title-group">
+            <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
+          </div>
+          <div class="scheduled-task-meta-row">
+            <span class="sched-meta-pill ${meta.isRepeat ? "is-repeat" : ""} ${meta.isOverdue ? "is-overdue" : ""}">${escapeHtml(meta.label)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="daily-task-actions">
+        <button
+          type="button"
+          class="btn-icon log-sched-btn ${isDoneForTarget ? "is-done" : ""}"
+          title="${isDoneForTarget ? `Unmark '${escapeHtml(task.title)}'` : isAhead ? `Mark '${escapeHtml(task.title)}' complete ahead for ${targetDateLabel}` : `Mark '${escapeHtml(task.title)}' as completed today`}"
+          aria-pressed="${isDoneForTarget ? "true" : "false"}"
+        >✓</button>
+        <button type="button" class="btn-icon edit-sched-btn" title="Edit scheduled task">${ICON_EDIT_SVG}</button>
+        <button type="button" class="btn-icon danger delete-sched-btn" title="Delete scheduled task">${ICON_TRASH_SVG}</button>
+      </div>
+    `;
+
+    const toggleDone = (e) => {
+      if (isEditingScheduledTasks) return;
+      checkAndPerformDailyReset(false);
+      const currentToday = getLogicalTodayStr();
+      const activeTargetDate = getScheduledTaskTargetDate(task, currentToday);
+      const activeIsAhead = activeTargetDate > currentToday;
+      const prevStats = getStatsSnapshot();
+      const wasGold = getStarStatusForDate(
+        currentToday,
+        state.logs.some((l) => l.date === currentToday)
+      ).hasGoldStar;
+
+      if (!task.completedDates || typeof task.completedDates !== "object") {
+        task.completedDates = {};
+      }
+      let markedDoneNow = false;
+      if (task.completedDates[activeTargetDate]) {
+        delete task.completedDates[activeTargetDate];
+      } else {
+        task.completedDates[activeTargetDate] = true;
+        markedDoneNow = true;
+        spawnConfettiBurst(e && e.currentTarget ? e.currentTarget : li, "#eab308");
+      }
+
+      evaluateTodayDailyStar(false);
+      const nowGold = getStarStatusForDate(
+        currentToday,
+        state.logs.some((l) => l.date === currentToday)
+      ).hasGoldStar;
+
+      saveState();
+      renderAll();
+      animateStatBumps(prevStats);
+
+      if (markedDoneNow && activeIsAhead) {
+        const dObj = parseLocalDateStr(activeTargetDate);
+        const dLabel = `${SHORT_MONTH_NAMES[dObj.getMonth()]} ${dObj.getDate()}`;
+        showToast(`Completed "${task.title}" ahead of schedule (for ${dLabel})!`);
+      } else if (!wasGold && nowGold) {
+        showToast(`Completed "${task.title}"! ⭐ Gold Daily Star earned!`);
+      }
+      announceFreezeIfEarned(prevStats.availableFreezes);
+    };
+
+    li.querySelector(".log-sched-btn").addEventListener("click", toggleDone);
+    li.querySelector(".daily-task-title").addEventListener("click", toggleDone);
+
+    // Drag and Drop reordering
+    li.addEventListener("dragstart", (e) => {
+      draggedScheduledId = task.id;
+      li.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", task.id);
+    });
+
+    li.addEventListener("dragover", (e) => {
+      if (!draggedScheduledId || draggedScheduledId === task.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drag-over");
+    });
+
+    li.addEventListener("dragleave", () => {
+      li.classList.remove("drag-over");
+    });
+
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      if (!draggedScheduledId || draggedScheduledId === task.id) return;
+
+      const fromIdx = state.scheduledTasks.findIndex((t) => t.id === draggedScheduledId);
+      const toIdx = state.scheduledTasks.findIndex((t) => t.id === task.id);
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      const [moved] = state.scheduledTasks.splice(fromIdx, 1);
+      state.scheduledTasks.splice(toIdx, 0, moved);
+      draggedScheduledId = null;
+      saveState();
+      renderAll();
+    });
+
+    li.addEventListener("dragend", () => {
+      draggedScheduledId = null;
+      li.classList.remove("dragging");
+      listEl.querySelectorAll(".scheduled-task-item").forEach((el) => el.classList.remove("drag-over"));
+    });
+
+    bindTouchReorder({
+      gripEl: li.querySelector(".drag-grip"),
+      itemEl: li,
+      containerEl: listEl,
+      itemSelector: ".scheduled-task-item",
+      datasetKey: "schedId",
+      sourceId: task.id,
+      onReorder: (fromId, toId) => {
+        const fromIdx = state.scheduledTasks.findIndex((t) => t.id === fromId);
+        const toIdx = state.scheduledTasks.findIndex((t) => t.id === toId);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const [moved] = state.scheduledTasks.splice(fromIdx, 1);
+        state.scheduledTasks.splice(toIdx, 0, moved);
+        saveState();
+        renderAll();
+      }
+    });
+
+    li.querySelector(".edit-sched-btn").addEventListener("click", () => {
+      openScheduledTaskModal(task);
+    });
+
+    li.querySelector(".delete-sched-btn").addEventListener("click", () => {
+      openConfirmModal(
+        "Delete Scheduled Task",
+        `Are you sure you want to delete "${task.title}"?`,
+        () => {
+          state.scheduledTasks = state.scheduledTasks.filter((t) => t.id !== task.id);
+          evaluateTodayDailyStar(false);
+          saveState();
+          renderAll();
+          showToast(`Deleted task "${task.title}"`);
+        }
+      );
+    });
+
+    listEl.appendChild(li);
+  });
+}
+
+function setScheduledModalType(type) {
+  const isRepeat = type === "repeat";
+  document.querySelectorAll("#sched-type-group .weight-pill-btn").forEach((btn) => {
+    const selected = btn.dataset.schedType === type;
+    btn.classList.toggle("is-selected", selected);
+    btn.setAttribute("aria-checked", selected ? "true" : "false");
+  });
+  const onceOpts = document.getElementById("sched-once-options");
+  const repeatOpts = document.getElementById("sched-repeat-options");
+  const dateInput = document.getElementById("input-scheduled-date");
+  if (onceOpts) onceOpts.classList.toggle("hidden", isRepeat);
+  if (repeatOpts) repeatOpts.classList.toggle("hidden", !isRepeat);
+  if (dateInput) dateInput.required = !isRepeat;
+}
+
+function setScheduledModalFreq(freq) {
+  const isMonthly = freq === "monthly";
+  document.querySelectorAll("#sched-freq-group .weight-pill-btn").forEach((btn) => {
+    const selected = btn.dataset.schedFreq === freq;
+    btn.classList.toggle("is-selected", selected);
+    btn.setAttribute("aria-checked", selected ? "true" : "false");
+  });
+  const weeklyEl = document.getElementById("sched-weekly-picker");
+  const monthlyEl = document.getElementById("sched-monthly-picker");
+  if (weeklyEl) weeklyEl.classList.toggle("hidden", isMonthly);
+  if (monthlyEl) monthlyEl.classList.toggle("hidden", !isMonthly);
+}
+
+function openScheduledTaskModal(existingTask = null) {
+  const modal = document.getElementById("modal-scheduled-task");
+  const titleHeading = document.getElementById("modal-scheduled-title");
+  const titleInput = document.getElementById("input-scheduled-title");
+  const dateInput = document.getElementById("input-scheduled-date");
+  const monthdayInput = document.getElementById("input-scheduled-monthday");
+  const saveBtn = document.getElementById("btn-sched-modal-save");
+  if (!modal) return;
+
+  const todayStr = getLogicalTodayStr();
+  const todayObj = getLogicalTodayDate();
+  const todayWeekday = (todayObj.getDay() + 6) % 7;
+
+  editingScheduledTaskId = existingTask ? existingTask.id : null;
+  if (titleHeading) titleHeading.textContent = existingTask ? "Edit Scheduled Task" : "Add Scheduled Task";
+  if (saveBtn) saveBtn.textContent = existingTask ? "Save Changes" : "Add Task";
+  if (titleInput) titleInput.value = existingTask ? existingTask.title : "";
+
+  const type = existingTask ? existingTask.type : "once";
+  setScheduledModalType(type);
+
+  if (dateInput) {
+    dateInput.value = (existingTask && existingTask.dueDate) || todayStr;
+  }
+
+  const rule = (existingTask && existingTask.repeatRule) || {};
+  const freq = rule.freq || "weekly";
+  setScheduledModalFreq(freq);
+
+  const selectedWeekdays = new Set(
+    Array.isArray(rule.weekdays) && rule.weekdays.length > 0 ? rule.weekdays : [todayWeekday]
+  );
+  document.querySelectorAll("#sched-weekday-pills .weekday-pill-btn").forEach((btn) => {
+    const dayIdx = Number(btn.dataset.weekday);
+    const active = selectedWeekdays.has(dayIdx);
+    btn.classList.toggle("is-selected", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  if (monthdayInput) {
+    monthdayInput.value = String(rule.monthDay || todayObj.getDate());
+  }
+
+  modal.classList.remove("hidden");
+  if (titleInput) {
+    titleInput.focus();
+    titleInput.select();
+  }
+}
+
+function closeScheduledTaskModal() {
+  editingScheduledTaskId = null;
+  const modal = document.getElementById("modal-scheduled-task");
+  if (modal) modal.classList.add("hidden");
+}
+
+function renderProcrastinationList() {
+  const cardEl = document.getElementById("procrastination-card");
+  const badgeEl = document.getElementById("procrastination-count-badge");
+  const listEl = document.getElementById("procrastination-list");
+  if (!cardEl || !badgeEl || !listEl) return;
+
+  listEl.classList.toggle("is-editing", isEditingProcrastination);
+  listEl.innerHTML = "";
+
+  const editBtn = document.getElementById("btn-edit-procrastination");
+  const editLabel = document.getElementById("btn-edit-procrastination-label");
+  if (editBtn) {
+    editBtn.classList.toggle("is-active", isEditingProcrastination);
+    editBtn.setAttribute("aria-pressed", isEditingProcrastination ? "true" : "false");
+  }
+  if (editLabel) {
+    editLabel.textContent = isEditingProcrastination ? "Done" : "Edit";
+  }
+
+  const tasks = Array.isArray(state.procrastinationTasks) ? state.procrastinationTasks : [];
+  const pendingCount = tasks.filter((t) => !t.doneToday).length;
+  badgeEl.textContent = tasks.length === 0 ? "0 pending" : `${pendingCount} pending`;
+
+  if (tasks.length === 0) {
+    listEl.innerHTML = `<li class="empty-state">Add one-time tasks you've been putting off — complete them to celebrate and clear them tomorrow!</li>`;
+    return;
+  }
+
+  tasks.forEach((task) => {
+    const li = document.createElement("li");
+    li.draggable = isEditingProcrastination;
+    li.dataset.procrastId = task.id;
+    li.className = `procrastination-item ${task.doneToday ? "done" : ""}`;
+
+    li.innerHTML = `
+      <div class="daily-task-left">
+        <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
+        <div class="activity-title-group">
+          <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
+        </div>
+      </div>
+      <div class="daily-task-actions">
+        <button
+          type="button"
+          class="btn-icon log-procrast-btn ${task.doneToday ? "is-done" : ""}"
+          title="${task.doneToday ? `Unmark '${escapeHtml(task.title)}'` : `Complete '${escapeHtml(task.title)}'`}"
+          aria-pressed="${task.doneToday ? "true" : "false"}"
+        >✓</button>
+        <button type="button" class="btn-icon edit-procrast-btn" title="Rename task">${ICON_EDIT_SVG}</button>
+        <button type="button" class="btn-icon danger delete-procrast-btn" title="Delete task">${ICON_TRASH_SVG}</button>
+      </div>
+    `;
+
+    const toggleDone = (e) => {
+      if (isEditingProcrastination) return;
+      checkAndPerformDailyReset(false);
+      task.doneToday = !task.doneToday;
+      if (
+        task.doneToday &&
+        state.activeDecision &&
+        state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+        state.activeDecision.itemId === task.id
+      ) {
+        state.activeDecision = null;
+      }
+      saveState();
+      renderAll();
+      if (task.doneToday) {
+        triggerBigProcrastinationCelebration(e && e.currentTarget ? e.currentTarget : li);
+        showToast(`🎉 Finally tackled "${task.title}"! It'll vanish tomorrow!`);
+      }
+    };
+
+    li.querySelector(".log-procrast-btn").addEventListener("click", toggleDone);
+    li.querySelector(".daily-task-title").addEventListener("click", toggleDone);
+
+    li.addEventListener("dragstart", (e) => {
+      draggedProcrastId = task.id;
+      li.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", task.id);
+    });
+
+    li.addEventListener("dragover", (e) => {
+      if (!draggedProcrastId || draggedProcrastId === task.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      li.classList.add("drag-over");
+    });
+
+    li.addEventListener("dragleave", () => {
+      li.classList.remove("drag-over");
+    });
+
+    li.addEventListener("drop", (e) => {
+      e.preventDefault();
+      li.classList.remove("drag-over");
+      if (!draggedProcrastId || draggedProcrastId === task.id) return;
+
+      const fromIdx = state.procrastinationTasks.findIndex((t) => t.id === draggedProcrastId);
+      const toIdx = state.procrastinationTasks.findIndex((t) => t.id === task.id);
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      const [moved] = state.procrastinationTasks.splice(fromIdx, 1);
+      state.procrastinationTasks.splice(toIdx, 0, moved);
+      draggedProcrastId = null;
+      saveState();
+      renderAll();
+    });
+
+    li.addEventListener("dragend", () => {
+      draggedProcrastId = null;
+      li.classList.remove("dragging");
+      listEl.querySelectorAll(".procrastination-item").forEach((el) => el.classList.remove("drag-over"));
+    });
+
+    bindTouchReorder({
+      gripEl: li.querySelector(".drag-grip"),
+      itemEl: li,
+      containerEl: listEl,
+      itemSelector: ".procrastination-item",
+      datasetKey: "procrastId",
+      sourceId: task.id,
+      onReorder: (fromId, toId) => {
+        const fromIdx = state.procrastinationTasks.findIndex((t) => t.id === fromId);
+        const toIdx = state.procrastinationTasks.findIndex((t) => t.id === toId);
+        if (fromIdx === -1 || toIdx === -1) return;
+        const [moved] = state.procrastinationTasks.splice(fromIdx, 1);
+        state.procrastinationTasks.splice(toIdx, 0, moved);
+        saveState();
+        renderAll();
+      }
+    });
+
+    li.querySelector(".edit-procrast-btn").addEventListener("click", () => {
+      openInputModal({
+        title: "Rename Procrastination Task",
+        label: "Task Name",
+        initialValue: task.title,
+        placeholder: "Enter task name...",
+        onSave: (newTitle) => {
+          task.title = newTitle;
+          if (
+            state.activeDecision &&
+            state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+            state.activeDecision.itemId === task.id
+          ) {
+            state.activeDecision.title = newTitle;
+          }
+          saveState();
+          renderAll();
+          showToast(`Renamed task to "${newTitle}"`);
+        }
+      });
+    });
+
+    li.querySelector(".delete-procrast-btn").addEventListener("click", () => {
+      openConfirmModal(
+        "Delete Procrastination Task",
+        `Are you sure you want to delete "${task.title}"?`,
+        () => {
+          state.procrastinationTasks = state.procrastinationTasks.filter((t) => t.id !== task.id);
+          if (
+            state.activeDecision &&
+            state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+            state.activeDecision.itemId === task.id
+          ) {
+            state.activeDecision = null;
+          }
+          saveState();
+          renderAll();
+          showToast(`Deleted task "${task.title}"`);
         }
       );
     });
@@ -1460,14 +2559,34 @@ function spawnConfettiBurst(originEl, listColor) {
     }
   }
 
-  const colors = [
-    listColor || PALETTE[0],
-    "#10b981", // --success
-    "#eab308", // --star-gold
-    "#6366f1", // --accent-primary
-    "#38bdf8", // --freeze-cyan
-    "#f43f5e"
-  ];
+  const astro = isAstrologyTheme();
+  const tarot = isTarotTheme();
+  const colors = astro
+    ? [
+        "#f5c451", // Celestial gold
+        "#c084fc", // Nebula violet
+        "#e879f9", // Astral magenta
+        "#67e8f9", // Starlight cyan
+        "#fde047", // Sunburst yellow
+        listColor || PALETTE[0]
+      ]
+    : tarot
+      ? [
+          "#d4a24c", // Antique tarot gold
+          "#e11d48", // Velvet crimson
+          "#f9f1e6", // Parchment ivory
+          "#b8862d", // Burnished bronze
+          "#1a8f6a", // Deep emerald
+          listColor || PALETTE[0]
+        ]
+      : [
+          listColor || PALETTE[0],
+          "#10b981", // --success
+          "#eab308", // --star-gold
+          "#6366f1", // --accent-primary
+          "#38bdf8", // --freeze-cyan
+          "#f43f5e"
+        ];
 
   const layer = document.createElement("div");
   layer.className = "confetti-burst-layer";
@@ -1484,11 +2603,23 @@ function spawnConfettiBurst(originEl, listColor) {
     const dy = Math.round(Math.sin(angle) * distance - 18);
     const rot = Math.round((Math.random() - 0.5) * 520);
     const isCircle = i % 3 === 0;
+    const isStarGlyph = (astro || tarot) && i % 2 === 0;
     const w = isCircle ? 7 : 6 + Math.round(Math.random() * 5);
     const h = isCircle ? 7 : 4 + Math.round(Math.random() * 4);
     const dur = 1050 + Math.round(Math.random() * 400);
     const delay = Math.round(Math.random() * 90);
     const color = colors[i % colors.length];
+
+    if (isStarGlyph) {
+      piece.classList.add("is-star-glyph");
+      if (tarot) {
+        const tarotGlyphs = ["♦", "♠", "✦"];
+        piece.textContent = tarotGlyphs[(i / 2) % tarotGlyphs.length];
+      } else {
+        piece.textContent = i % 4 === 0 ? "✦" : "★";
+      }
+      piece.style.setProperty("--glyph-size", `${11 + (i % 5)}px`);
+    }
 
     piece.style.setProperty("--x", `${cx}px`);
     piece.style.setProperty("--y", `${cy}px`);
@@ -1509,6 +2640,85 @@ function spawnConfettiBurst(originEl, listColor) {
   setTimeout(() => {
     layer.remove();
   }, 1600);
+}
+
+function triggerBigProcrastinationCelebration(originEl) {
+  if (prefersReducedMotion()) return;
+
+  const procrastCard = document.getElementById("procrastination-card");
+  const decisionCard = document.getElementById("decision-card");
+  [procrastCard, decisionCard].forEach((el) => {
+    if (!el) return;
+    el.classList.remove("is-big-celebration");
+    void el.offsetWidth;
+    el.classList.add("is-big-celebration");
+    setTimeout(() => el.classList.remove("is-big-celebration"), 1250);
+  });
+
+  // Multi-wave high-count confetti bursts across origin & center screen
+  const waveOffsets = [
+    { delay: 0, count: 52, spread: 190, el: originEl },
+    { delay: 160, count: 44, spread: 230, el: procrastCard || originEl },
+    { delay: 320, count: 40, spread: 210, el: decisionCard || originEl }
+  ];
+
+  const colors = [
+    PROCRASTINATION_LIST_COLOR,
+    "#eab308",
+    "#10b981",
+    "#6366f1",
+    "#ec4899",
+    "#38bdf8"
+  ];
+
+  waveOffsets.forEach(({ delay, count, spread, el }) => {
+    setTimeout(() => {
+      let cx = window.innerWidth / 2;
+      let cy = window.innerHeight / 2.4;
+      if (el && typeof el.getBoundingClientRect === "function") {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          cx = rect.left + rect.width / 2;
+          cy = rect.top + rect.height / 2;
+        }
+      }
+
+      const layer = document.createElement("div");
+      layer.className = "confetti-burst-layer";
+      layer.setAttribute("aria-hidden", "true");
+
+      for (let i = 0; i < count; i++) {
+        const piece = document.createElement("span");
+        piece.className = "confetti-piece";
+        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.45;
+        const distance = 70 + Math.random() * spread;
+        const dx = Math.round(Math.cos(angle) * distance);
+        const dy = Math.round(Math.sin(angle) * distance - 30);
+        const rot = Math.round((Math.random() - 0.5) * 760);
+        const isCircle = i % 3 === 0;
+        const w = isCircle ? 9 : 8 + Math.round(Math.random() * 6);
+        const h = isCircle ? 9 : 5 + Math.round(Math.random() * 5);
+        const dur = 1250 + Math.round(Math.random() * 500);
+        const pDelay = Math.round(Math.random() * 100);
+
+        piece.style.setProperty("--x", `${cx}px`);
+        piece.style.setProperty("--y", `${cy}px`);
+        piece.style.setProperty("--dx", `${dx}px`);
+        piece.style.setProperty("--dy", `${dy}px`);
+        piece.style.setProperty("--rot", `${rot}deg`);
+        piece.style.setProperty("--w", `${w}px`);
+        piece.style.setProperty("--h", `${h}px`);
+        piece.style.setProperty("--r", isCircle ? "50%" : "2px");
+        piece.style.setProperty("--c", colors[i % colors.length]);
+        piece.style.setProperty("--dur", `${dur}ms`);
+        piece.style.setProperty("--delay", `${pDelay}ms`);
+        layer.appendChild(piece);
+      }
+
+      document.body.appendChild(layer);
+      setTimeout(() => layer.remove(), 1900);
+    }, delay);
+  });
 }
 
 /**
@@ -1564,7 +2774,7 @@ function triggerDecisionRoll(isReroll = false) {
   clearCompletingDecisionHold();
   checkAndPerformDailyReset(false);
 
-  const activeList = getActiveList();
+  const activeList = getActiveHeroPool();
   const checkedPool = activeList.items.filter((i) => i.checked);
   let candidates = checkedPool;
 
@@ -1591,11 +2801,13 @@ function triggerDecisionRoll(isReroll = false) {
   const { item: chosen } = pickWeightedItem(candidates);
   const chosenWeight = normalizeWeight(chosen.weight);
   const probabilityPct = Math.round((chosenWeight / totalWeightAllChecked) * 100);
-  const chosenListColor = activeList.color || PALETTE[0];
+  const chosenListId = chosen.listId || activeList.id;
+  const chosenListName = chosen.listName || activeList.name;
+  const chosenListColor = chosen.listColor || activeList.color || PALETTE[0];
   const decisionPayload = {
     itemId: chosen.id,
-    listId: activeList.id,
-    listName: activeList.name,
+    listId: chosenListId,
+    listName: chosenListName,
     title: chosen.title,
     color: chosenListColor,
     weight: chosenWeight,
@@ -1718,21 +2930,30 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), origi
   calYear = y;
   calMonth = m - 1;
 
-  const wasSilverToday =
+  const wasGoldToday =
     dateStr === todayStr &&
-    Boolean(state.dailyStarsByDate[todayStr]) &&
-    state.logs.filter((l) => l.date === todayStr).length === 1;
+    getStarStatusForDate(todayStr, state.logs.filter((l) => l.date === todayStr).length > 1).hasGoldStar;
 
   if (dateStr === todayStr) {
     evaluateTodayDailyStar(false);
   }
 
+  const todayStarAfter =
+    dateStr === todayStr ? getStarStatusForDate(todayStr, true) : null;
+
   saveState();
   spawnConfettiBurst(originEl, resolvedColor);
   renderAll();
   animateStatBumps(prevStats);
-  if (wasSilverToday) {
+  if (dateStr === todayStr && !wasGoldToday && todayStarAfter && todayStarAfter.hasGoldStar) {
     showToast(`Completed "${item.title}"! ★ Upgraded to Gold Daily Star!`);
+  } else if (
+    dateStr === todayStr &&
+    todayStarAfter &&
+    todayStarAfter.hasSilverStar &&
+    !todayStarAfter.scheduledDone
+  ) {
+    showToast(`Completed "${item.title}"! Finish today's To-Do & Schedule tasks for a Gold Star!`);
   } else {
     showToast(`Completed "${item.title}"! 🎉`);
   }
@@ -1825,9 +3046,7 @@ function renderCalendar() {
       const dateStr = toLocalDateStr(cellDate);
       const dayLogs = logsByDate.get(dateStr) || [];
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
-      const hasDailyTasksDone = Boolean(state.dailyStarsByDate[dateStr]);
-      const hasGoldStar = hasDailyTasksDone && dayLogs.length > 0;
-      const hasSilverStar = hasDailyTasksDone && dayLogs.length === 0;
+      const { hasGoldStar, hasSilverStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -1856,35 +3075,41 @@ function renderCalendar() {
 
       const formattedShortDate = `${SHORT_MONTH_NAMES[cellDate.getMonth()]} ${cellDate.getDate()}`;
 
+      const badgesHtml = [
+        isStreakDay && streakDayNum > 0 ? `<span class="cal-done-tag" title="Qualifying Streak Day #${streakDayNum}">🔥 Day ${streakDayNum}</span>` : "",
+        isFrozen ? `<span class="cal-freeze-tag" title="Streak Freeze automatically used on ${dateStr}">❄️ Freeze</span>` : "",
+        hasGoldStar ? `<span class="cal-star-tag" title="Gold Star: All Daily Tasks + Activity completed on ${dateStr}">★</span>` : "",
+        hasSilverStar ? `<span class="cal-star-tag is-silver" title="Silver Star: All Daily Tasks completed on ${dateStr} (no activities logged)">★</span>` : "",
+        dayRerolls > 0 ? `<span class="cal-reroll-tag" title="${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}">🎲 ${dayRerolls}</span>` : ""
+      ]
+        .filter(Boolean)
+        .join("");
+
       row.innerHTML = `
-        <div class="week-day-left">
-          <div class="week-day-name">
-            <span>${WEEKDAY_NAMES[i]}</span>
-            ${isToday ? `<span class="week-today-pill">Today</span>` : ""}
+        <div class="week-day-main">
+          <div class="week-day-left">
+            ${badgesHtml ? `<div class="week-day-badges">${badgesHtml}</div>` : ""}
+            <div class="week-day-name">
+              <span>${WEEKDAY_NAMES[i]}</span>
+              ${isToday ? `<span class="week-today-pill">Today</span>` : ""}
+            </div>
+            <div class="week-day-date">${formattedShortDate}</div>
           </div>
-          <div class="week-day-date">${formattedShortDate}</div>
-        </div>
-        <div class="week-day-middle">
-          ${
-            dayLogs.length > 0
-              ? dayLogs
-                  .map(
-                    (l) =>
-                      `<span class="week-activity-chip" style="border-left-color: ${getListColor(l.listId, l.color || PALETTE[0])}">${escapeHtml(l.itemTitle)}</span>`
-                  )
-                  .join("")
-              : isFrozen
-                ? `<span class="week-empty-label">❄️ Streak protected by Streak Freeze</span>`
-                : `<span class="week-empty-label">No completed activities</span>`
-          }
-          ${dayNote ? `<div class="week-day-note"><span aria-hidden="true">📝</span> <span>${escapeHtml(dayNote)}</span></div>` : ""}
-        </div>
-        <div class="week-day-right">
-          ${isStreakDay && streakDayNum > 0 ? `<span class="cal-done-tag" title="Qualifying Streak Day #${streakDayNum}">🔥 Day ${streakDayNum}</span>` : ""}
-          ${isFrozen ? `<span class="cal-freeze-tag" title="Streak Freeze automatically used on ${dateStr}">❄️ Freeze</span>` : ""}
-          ${hasGoldStar ? `<span class="cal-star-tag" title="Gold Star: All Daily Tasks + Activity completed on ${dateStr}">★</span>` : ""}
-          ${hasSilverStar ? `<span class="cal-star-tag is-silver" title="Silver Star: All Daily Tasks completed on ${dateStr} (no activities logged)">★</span>` : ""}
-          ${dayRerolls > 0 ? `<span class="cal-reroll-tag" title="${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}">🎲 ${dayRerolls}</span>` : ""}
+          <div class="week-day-middle">
+            ${
+              dayLogs.length > 0
+                ? dayLogs
+                    .map(
+                      (l) =>
+                        `<span class="week-activity-chip" style="border-left-color: ${getListColor(l.listId, l.color || PALETTE[0])}">${escapeHtml(l.itemTitle)}</span>`
+                    )
+                    .join("")
+                : isFrozen
+                  ? `<span class="week-empty-label">❄️ Streak protected by Streak Freeze</span>`
+                  : `<span class="week-empty-label">No completed activities</span>`
+            }
+            ${dayNote ? `<div class="week-day-note"><span aria-hidden="true">📝</span> <span>${escapeHtml(dayNote)}</span></div>` : ""}
+          </div>
         </div>
       `;
 
@@ -1948,9 +3173,7 @@ function renderCalendar() {
       const dateStr = `${cellYear}-${String(cellMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
       const dayLogs = logsByDate.get(dateStr) || [];
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
-      const hasDailyTasksDone = Boolean(state.dailyStarsByDate[dateStr]);
-      const hasGoldStar = hasDailyTasksDone && dayLogs.length > 0;
-      const hasSilverStar = hasDailyTasksDone && dayLogs.length === 0;
+      const { hasGoldStar, hasSilverStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -2041,7 +3264,7 @@ function createMonthlyDayCell({
     <div class="cal-day-header">
       <span class="cal-day-num">${dayNum}</span>
       <span class="cal-day-badges">
-        ${dayNote ? `<span class="cal-note-inline" aria-label="Daily note">📝</span>` : ""}
+        ${dayNote ? `<span class="cal-note-inline" aria-label="Daily note"><svg class="ui-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span>` : ""}
         ${isFrozen ? `<span class="cal-freeze-inline" aria-label="Streak Freeze used">❄️</span>` : ""}
         ${hasGoldStar ? `<span class="cal-star-inline" aria-label="Gold Star: Daily Tasks and activity completed">★</span>` : ""}
         ${hasSilverStar ? `<span class="cal-star-inline is-silver" aria-label="Silver Star: Daily Tasks completed">★</span>` : ""}
@@ -2184,9 +3407,10 @@ function renderDayInspector() {
 
   const dayLogs = state.logs.filter((l) => l.date === selectedDateStr);
   const dayRerolls = Number(state.rerollsByDate[selectedDateStr]) || 0;
-  const hasDailyTasksDone = Boolean(state.dailyStarsByDate[selectedDateStr]);
-  const hasGoldStar = hasDailyTasksDone && dayLogs.length > 0;
-  const hasSilverStar = hasDailyTasksDone && dayLogs.length === 0;
+  const { scheduledDone, hasGoldStar, hasSilverStar } = getStarStatusForDate(
+    selectedDateStr,
+    dayLogs.length > 0
+  );
 
   // Completed badge: green when > 0, neutral when 0
   const countBadgeEl = document.getElementById("inspector-count-badge");
@@ -2207,10 +3431,13 @@ function renderDayInspector() {
     starBadgeEl.classList.toggle("badge-star-silver", hasSilverStar);
     if (hasGoldStar) {
       starBadgeEl.textContent = "★ Gold Star";
-      starBadgeEl.title = "All Daily Tasks + at least 1 Activity were completed on this date!";
+      starBadgeEl.title = "All Daily Tasks, Scheduled Tasks + at least 1 Activity were completed on this date!";
     } else if (hasSilverStar) {
       starBadgeEl.textContent = "★ Silver Star";
-      starBadgeEl.title = "All Daily Tasks were completed on this date (no activities logged).";
+      starBadgeEl.title =
+        dayLogs.length > 0 && !scheduledDone
+          ? "All Daily Tasks were completed, but To-Do & Schedule tasks for this date were incomplete."
+          : "All Daily Tasks were completed on this date (no activities logged).";
     }
   }
 
@@ -2424,12 +3651,120 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+function renderCollapsibleCards() {
+  const configs = [
+    {
+      key: "activityLists",
+      cardId: "pool-card",
+      bodyId: "pool-card-body",
+      btnId: "btn-toggle-activity-lists",
+      label: "Activity Lists"
+    },
+    {
+      key: "dailyTasks",
+      cardId: "daily-tasks-card",
+      bodyId: "daily-tasks-card-body",
+      btnId: "btn-toggle-daily-tasks",
+      label: "Daily Tasks"
+    },
+    {
+      key: "scheduledTasks",
+      cardId: "scheduled-tasks-card",
+      bodyId: "scheduled-tasks-card-body",
+      btnId: "btn-toggle-scheduled-tasks",
+      label: "To-Do & Schedule"
+    },
+    {
+      key: "procrastination",
+      cardId: "procrastination-card",
+      bodyId: "procrastination-card-body",
+      btnId: "btn-toggle-procrastination",
+      label: "Procrastination List"
+    },
+    {
+      key: "insights",
+      cardId: "insights-card",
+      bodyId: "insights-card-body",
+      btnId: "btn-toggle-insights",
+      label: "All-Time Breakdown"
+    }
+  ];
+
+  configs.forEach(({ key, cardId, bodyId, btnId, label }) => {
+    const isCollapsed = Boolean(state.collapsedCards && state.collapsedCards[key]);
+    const cardEl = document.getElementById(cardId);
+    const bodyEl = document.getElementById(bodyId);
+    const btnEl = document.getElementById(btnId);
+
+    if (cardEl) {
+      cardEl.classList.toggle("is-collapsed", isCollapsed);
+    }
+    if (bodyEl) {
+      bodyEl.inert = isCollapsed;
+    }
+    if (btnEl) {
+      const actionLabel = `${isCollapsed ? "Expand" : "Collapse"} ${label}`;
+      btnEl.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      btnEl.setAttribute("title", actionLabel);
+      btnEl.setAttribute("aria-label", actionLabel);
+    }
+  });
+}
+
+function setActiveTaskTab(tabName) {
+  const validTabs = ["daily", "schedule"];
+  const nextTab = validTabs.includes(tabName) ? tabName : "daily";
+  state.activeTaskTab = nextTab;
+  saveState();
+  renderTaskHubTabs();
+}
+
+function renderTaskHubTabs() {
+  const activeTab = ["daily", "schedule"].includes(state.activeTaskTab)
+    ? state.activeTaskTab
+    : "daily";
+
+  document.querySelectorAll(".task-hub-tab").forEach((btn) => {
+    const isActive = btn.dataset.taskTab === activeTab;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+
+  const panelMap = {
+    daily: document.getElementById("daily-tasks-card"),
+    schedule: document.getElementById("scheduled-tasks-card")
+  };
+
+  Object.entries(panelMap).forEach(([key, panelEl]) => {
+    if (!panelEl) return;
+    panelEl.classList.toggle("hidden", key !== activeTab);
+  });
+}
+
+function setMobileView(viewName) {
+  const validViews = ["decide", "tasks", "calendar"];
+  const nextView = validViews.includes(viewName) ? viewName : "decide";
+  const shell = document.getElementById("app-shell");
+  if (shell) {
+    shell.setAttribute("data-mobile-view", nextView);
+  }
+  document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
+    const isActive = btn.dataset.mobileView === nextView;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
 function renderAll() {
   applyTheme();
+  renderCollapsibleCards();
+  renderTaskHubTabs();
   renderListTabs();
   renderDecisionCard();
   renderActivityPool();
   renderDailyTasks();
+  renderScheduledTasks();
+  renderProcrastinationList();
   renderCalendar();
   renderDayInspector();
   renderStatsAndInsights();
@@ -2437,17 +3772,122 @@ function renderAll() {
 
 // Wire Up Event Listeners
 function initEvents() {
-  // Theme toggle
-  const handleToggleTheme = () => {
-    state.theme = state.theme === "dark" ? "light" : "dark";
-    saveState();
-    applyTheme();
+  // Theme & Settings dropdowns
+  const closeThemeDropdowns = () => {
+    document.querySelectorAll(".theme-dropdown").forEach((dd) => dd.classList.add("hidden"));
+    document.querySelectorAll(".theme-picker-btn").forEach((btn) => btn.setAttribute("aria-expanded", "false"));
   };
-  document.getElementById("btn-theme-toggle").addEventListener("click", handleToggleTheme);
-  const footerThemeBtn = document.getElementById("btn-theme-toggle-footer");
-  if (footerThemeBtn) {
-    footerThemeBtn.addEventListener("click", handleToggleTheme);
-  }
+
+  const closeSettingsDropdown = () => {
+    document.querySelectorAll(".settings-dropdown").forEach((dd) => dd.classList.add("hidden"));
+    document.querySelectorAll(".btn-settings-toggle").forEach((btn) => btn.setAttribute("aria-expanded", "false"));
+  };
+
+  const bindThemePicker = (pickerId, btnId, dropdownId) => {
+    const picker = document.getElementById(pickerId);
+    const btn = document.getElementById(btnId);
+    const dropdown = document.getElementById(dropdownId);
+    if (!picker || !btn || !dropdown) return;
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = dropdown.classList.contains("hidden");
+      closeThemeDropdowns();
+      closeSettingsDropdown();
+      if (willOpen) {
+        dropdown.classList.remove("hidden");
+        btn.setAttribute("aria-expanded", "true");
+      }
+    });
+
+    dropdown.querySelectorAll(".theme-option").forEach((opt) => {
+      opt.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const nextTheme = normalizeTheme(opt.dataset.themeValue);
+        if (nextTheme !== state.theme) {
+          state.theme = nextTheme;
+          if (state.theme === "astrology") {
+            astrologyHeroPromptIndex = Math.floor(Math.random() * 3);
+          } else if (state.theme === "tarot") {
+            tarotHeroPromptIndex = Math.floor(Math.random() * TAROT_HERO_PROMPTS.length);
+          }
+          saveState();
+          applyTheme();
+          renderDecisionCard();
+        }
+        closeThemeDropdowns();
+      });
+    });
+  };
+
+  bindThemePicker("theme-picker-header", "btn-theme-toggle", "theme-dropdown-header");
+  bindThemePicker("theme-picker-footer", "btn-theme-toggle-footer", "theme-dropdown-footer");
+
+  const bindSettingsMenu = (btnId, dropdownId) => {
+    const toggleBtn = document.getElementById(btnId);
+    const dropdown = document.getElementById(dropdownId);
+    if (!toggleBtn || !dropdown) return;
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = dropdown.classList.contains("hidden");
+      closeThemeDropdowns();
+      closeSettingsDropdown();
+      if (willOpen) {
+        dropdown.classList.remove("hidden");
+        toggleBtn.setAttribute("aria-expanded", "true");
+      }
+    });
+    dropdown.addEventListener("click", () => {
+      closeSettingsDropdown();
+    });
+  };
+
+  bindSettingsMenu("btn-settings-toggle", "settings-dropdown");
+  bindSettingsMenu("btn-settings-toggle-footer", "settings-dropdown-footer");
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".theme-picker")) {
+      closeThemeDropdowns();
+    }
+    if (!e.target.closest(".settings-menu-wrap")) {
+      closeSettingsDropdown();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeThemeDropdowns();
+      closeSettingsDropdown();
+      closeAboutModal();
+      return;
+    }
+    if (e.code === "Space" && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const hasOpenModal = Boolean(document.querySelector(".modal-backdrop:not(.hidden)"));
+      const isInteractiveTarget = Boolean(
+        e.target && e.target.closest("input, textarea, select, button, a, [role='button'], [role='tab'], [contenteditable]")
+      );
+      if (!hasOpenModal && !isInteractiveTarget && !isRolling) {
+        e.preventDefault();
+        const isReRoll = Boolean(state.activeDecision);
+        triggerDecisionRoll(isReRoll);
+      }
+    }
+  });
+
+  // Tabbed Task Hub (Daily | Schedule | Procrastination)
+  document.querySelectorAll(".task-hub-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setActiveTaskTab(btn.dataset.taskTab);
+    });
+  });
+
+  // Sticky Mobile Bottom Navigation
+  document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setMobileView(btn.dataset.mobileView);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
 
   // Decide For Me & Active Choice Actions
   document.getElementById("btn-decide").addEventListener("click", () => triggerDecisionRoll(false));
@@ -2456,6 +3896,19 @@ function initEvents() {
   document.getElementById("btn-complete-chosen").addEventListener("click", (e) => {
     if (!state.activeDecision || completingDecisionSnapshot) return;
     const d = state.activeDecision;
+    if (d.listId === PROCRASTINATION_LIST_ID) {
+      checkAndPerformDailyReset(false);
+      const task = (state.procrastinationTasks || []).find((t) => t.id === d.itemId);
+      if (task) {
+        task.doneToday = true;
+      }
+      state.activeDecision = null;
+      saveState();
+      renderAll();
+      triggerBigProcrastinationCelebration(e.currentTarget);
+      showToast(`🎉 Finally tackled "${d.title}"! It'll vanish tomorrow!`);
+      return;
+    }
     const listColor = getListColor(d.listId, d.color || PALETTE[0]);
     logActivityCompletion(
       { id: d.itemId, title: d.title },
@@ -2464,6 +3917,20 @@ function initEvents() {
       e.currentTarget
     );
   });
+
+  // About Modal Actions
+  const aboutBtn = document.getElementById("btn-about");
+  const aboutFooterBtn = document.getElementById("btn-about-footer");
+  const aboutCloseBtn = document.getElementById("btn-about-close");
+  const aboutModalEl = document.getElementById("modal-about");
+  if (aboutBtn) aboutBtn.addEventListener("click", openAboutModal);
+  if (aboutFooterBtn) aboutFooterBtn.addEventListener("click", openAboutModal);
+  if (aboutCloseBtn) aboutCloseBtn.addEventListener("click", closeAboutModal);
+  if (aboutModalEl) {
+    aboutModalEl.addEventListener("click", (e) => {
+      if (e.target === aboutModalEl) closeAboutModal();
+    });
+  }
 
   // Confirmation Pop-up Modal Actions
   document.getElementById("btn-confirm-cancel").addEventListener("click", closeConfirmModal);
@@ -2474,20 +3941,17 @@ function initEvents() {
     closeConfirmModal();
   });
 
-  // Check All / Uncheck All
-  document.getElementById("btn-check-all").addEventListener("click", () => {
-    const activeList = getActiveList();
-    activeList.items.forEach((i) => (i.checked = true));
-    saveState();
-    renderAll();
-  });
-
-  document.getElementById("btn-uncheck-all").addEventListener("click", () => {
-    const activeList = getActiveList();
-    activeList.items.forEach((i) => (i.checked = false));
-    saveState();
-    renderAll();
-  });
+  // Smart Check All / Uncheck All Toggle
+  const toggleCheckAllBtn = document.getElementById("btn-toggle-check-all");
+  if (toggleCheckAllBtn) {
+    toggleCheckAllBtn.addEventListener("click", () => {
+      const activeList = getActiveList();
+      const anyChecked = activeList.items.some((i) => i.checked);
+      activeList.items.forEach((i) => (i.checked = !anyChecked));
+      saveState();
+      renderAll();
+    });
+  }
 
   // Edit Mode Toggles for Activity List & Daily Tasks
   const editActivitiesBtn = document.getElementById("btn-edit-activities");
@@ -2506,45 +3970,281 @@ function initEvents() {
     });
   }
 
-  // Add New Activity Form
-  document.getElementById("form-add-item").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const input = document.getElementById("input-new-item");
-    const weightSelect = document.getElementById("select-new-weight");
-    const title = input.value.trim();
-    if (!title) return;
-
-    const activeList = getActiveList();
-    activeList.items.push({
-      id: uid("item"),
-      title,
-      checked: true,
-      weight: normalizeWeight(weightSelect.value)
+  // Collapsible Card Toggles (entire card header is clickable)
+  const bindCollapsibleHeader = (cardId, stateKey) => {
+    const cardEl = document.getElementById(cardId);
+    if (!cardEl) return;
+    const headerEl = cardEl.querySelector(":scope > .section-header, :scope > .inspector-header");
+    if (!headerEl) return;
+    headerEl.classList.add("is-collapsible-header");
+    headerEl.addEventListener("click", (e) => {
+      if (e.target.closest("button:not(.btn-collapse-toggle), a, input")) return;
+      state.collapsedCards[stateKey] = !state.collapsedCards[stateKey];
+      saveState();
+      renderCollapsibleCards();
     });
+  };
 
-    input.value = "";
-    saveState();
-    renderAll();
-  });
+  bindCollapsibleHeader("pool-card", "activityLists");
+  bindCollapsibleHeader("procrastination-card", "procrastination");
+  bindCollapsibleHeader("insights-card", "insights");
 
-  // Add New Daily Task Form
-  document.getElementById("form-add-daily").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const input = document.getElementById("input-new-daily");
-    const title = input.value.trim();
-    if (!title) return;
-
-    checkAndPerformDailyReset(false);
-    state.dailyTasks.push({
-      id: uid("daily"),
-      title,
-      doneToday: false
+  const editProcrastinationBtn = document.getElementById("btn-edit-procrastination");
+  if (editProcrastinationBtn) {
+    editProcrastinationBtn.addEventListener("click", () => {
+      isEditingProcrastination = !isEditingProcrastination;
+      renderProcrastinationList();
     });
-    input.value = "";
-    evaluateTodayDailyStar(false);
-    saveState();
-    renderAll();
-  });
+  }
+
+  const addProcrastinationBtn = document.getElementById("btn-add-procrastination");
+  if (addProcrastinationBtn) {
+    addProcrastinationBtn.addEventListener("click", () => {
+      openInputModal({
+        title: "Add Procrastination Task",
+        label: "Task Name",
+        initialValue: "",
+        placeholder: "e.g., Clean out garage, File taxes, Fix squeaky door...",
+        saveLabel: "Add Task",
+        showAddAnother: true,
+        onSave: (title) => {
+          checkAndPerformDailyReset(false);
+          if (!Array.isArray(state.procrastinationTasks)) state.procrastinationTasks = [];
+          state.procrastinationTasks.push({
+            id: uid("procrast"),
+            title,
+            doneToday: false
+          });
+          saveState();
+          renderAll();
+          showToast(`Added "${title}" to Procrastination List`);
+        }
+      });
+    });
+  }
+
+  // To-Do & Schedule: View Switcher, Edit Mode, and Add/Edit Modal Events
+  const schedViewTodayBtn = document.getElementById("btn-sched-view-today");
+  if (schedViewTodayBtn) {
+    schedViewTodayBtn.addEventListener("click", () => {
+      scheduledViewMode = "today";
+      renderScheduledTasks();
+    });
+  }
+
+  const schedViewUpcomingBtn = document.getElementById("btn-sched-view-upcoming");
+  if (schedViewUpcomingBtn) {
+    schedViewUpcomingBtn.addEventListener("click", () => {
+      scheduledViewMode = "upcoming";
+      renderScheduledTasks();
+    });
+  }
+
+  const editScheduledBtn = document.getElementById("btn-edit-scheduled");
+  if (editScheduledBtn) {
+    editScheduledBtn.addEventListener("click", () => {
+      isEditingScheduledTasks = !isEditingScheduledTasks;
+      renderScheduledTasks();
+    });
+  }
+
+  const addScheduledBtn = document.getElementById("btn-add-scheduled");
+  if (addScheduledBtn) {
+    addScheduledBtn.addEventListener("click", () => {
+      openScheduledTaskModal(null);
+    });
+  }
+
+  const schedTypeGroup = document.getElementById("sched-type-group");
+  if (schedTypeGroup) {
+    schedTypeGroup.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-sched-type]");
+      if (btn) setScheduledModalType(btn.dataset.schedType);
+    });
+  }
+
+  const schedFreqGroup = document.getElementById("sched-freq-group");
+  if (schedFreqGroup) {
+    schedFreqGroup.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-sched-freq]");
+      if (btn) setScheduledModalFreq(btn.dataset.schedFreq);
+    });
+  }
+
+  const schedWeekdayPills = document.getElementById("sched-weekday-pills");
+  if (schedWeekdayPills) {
+    schedWeekdayPills.addEventListener("click", (e) => {
+      const btn = e.target.closest(".weekday-pill-btn");
+      if (!btn) return;
+      const next = !btn.classList.contains("is-selected");
+      btn.classList.toggle("is-selected", next);
+      btn.setAttribute("aria-pressed", next ? "true" : "false");
+    });
+  }
+
+  const schedTodayBtn = document.getElementById("btn-sched-today");
+  if (schedTodayBtn) {
+    schedTodayBtn.addEventListener("click", () => {
+      const dateInput = document.getElementById("input-scheduled-date");
+      if (dateInput) dateInput.value = getLogicalTodayStr();
+    });
+  }
+
+  const schedTomorrowBtn = document.getElementById("btn-sched-tomorrow");
+  if (schedTomorrowBtn) {
+    schedTomorrowBtn.addEventListener("click", () => {
+      const dateInput = document.getElementById("input-scheduled-date");
+      if (dateInput) dateInput.value = getAdjacentDateStr(getLogicalTodayStr(), 1);
+    });
+  }
+
+  const schedCancelBtn = document.getElementById("btn-sched-modal-cancel");
+  if (schedCancelBtn) {
+    schedCancelBtn.addEventListener("click", closeScheduledTaskModal);
+  }
+
+  const schedModalBackdrop = document.getElementById("modal-scheduled-task");
+  if (schedModalBackdrop) {
+    schedModalBackdrop.addEventListener("click", (e) => {
+      if (e.target === schedModalBackdrop) closeScheduledTaskModal();
+    });
+  }
+
+  const schedForm = document.getElementById("form-modal-scheduled");
+  if (schedForm) {
+    schedForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const titleInput = document.getElementById("input-scheduled-title");
+      const title = titleInput ? titleInput.value.trim() : "";
+      if (!title) return;
+
+      const selectedTypeBtn = document.querySelector("#sched-type-group .weight-pill-btn.is-selected");
+      const type = selectedTypeBtn ? selectedTypeBtn.dataset.schedType : "once";
+      const todayStr = getLogicalTodayStr();
+
+      let dueDate = todayStr;
+      let repeatRule = null;
+
+      if (type === "once") {
+        const dateInput = document.getElementById("input-scheduled-date");
+        dueDate = (dateInput && dateInput.value) || todayStr;
+      } else {
+        const selectedFreqBtn = document.querySelector("#sched-freq-group .weight-pill-btn.is-selected");
+        const freq = selectedFreqBtn ? selectedFreqBtn.dataset.schedFreq : "weekly";
+        if (freq === "monthly") {
+          const monthdayInput = document.getElementById("input-scheduled-monthday");
+          const monthDay = Math.min(31, Math.max(1, Number(monthdayInput && monthdayInput.value) || 1));
+          repeatRule = { freq: "monthly", weekdays: [], monthDay };
+        } else {
+          const weekdays = Array.from(
+            document.querySelectorAll("#sched-weekday-pills .weekday-pill-btn.is-selected")
+          ).map((btn) => Number(btn.dataset.weekday));
+          if (weekdays.length === 0) {
+            showToast("Please select at least one day of the week.");
+            return;
+          }
+          repeatRule = { freq: "weekly", weekdays, monthDay: 1 };
+        }
+      }
+
+      checkAndPerformDailyReset(false);
+      if (!Array.isArray(state.scheduledTasks)) state.scheduledTasks = [];
+
+      if (editingScheduledTaskId) {
+        const existing = state.scheduledTasks.find((t) => t.id === editingScheduledTaskId);
+        if (existing) {
+          existing.title = title;
+          existing.type = type;
+          if (type === "once") {
+            existing.dueDate = dueDate;
+            delete existing.repeatRule;
+          } else {
+            existing.repeatRule = repeatRule;
+            delete existing.dueDate;
+            if (!existing.createdAt) existing.createdAt = todayStr;
+          }
+        }
+        showToast(`Updated task "${title}"`);
+      } else {
+        const newTask = {
+          id: uid("sched"),
+          title,
+          type,
+          completedDates: {},
+          createdAt: todayStr
+        };
+        if (type === "once") {
+          newTask.dueDate = dueDate;
+        } else {
+          newTask.repeatRule = repeatRule;
+        }
+        state.scheduledTasks.push(newTask);
+        showToast(`Added task "${title}"`);
+      }
+
+      evaluateTodayDailyStar(false);
+      saveState();
+      closeScheduledTaskModal();
+      renderAll();
+    });
+  }
+
+  // Add New Activity Modal Trigger
+  const addActivityBtn = document.getElementById("btn-add-activity");
+  if (addActivityBtn) {
+    addActivityBtn.addEventListener("click", () => {
+      const activeList = getActiveList();
+      openInputModal({
+        title: `Add to ${activeList.name}`,
+        label: "Activity Name",
+        placeholder: "e.g. Read 20 pages",
+        maxLength: 80,
+        saveLabel: "Add",
+        showWeightPicker: true,
+        initialWeight: 1,
+        showAddAnother: true,
+        onSave: (title, _color, weight) => {
+          const currentList = getActiveList();
+          currentList.items.push({
+            id: uid("item"),
+            title,
+            checked: true,
+            weight: normalizeWeight(weight)
+          });
+          saveState();
+          renderAll();
+          showToast(`Added "${title}"`);
+        }
+      });
+    });
+  }
+
+  // Add New Daily Task Modal Trigger
+  const addDailyBtn = document.getElementById("btn-add-daily");
+  if (addDailyBtn) {
+    addDailyBtn.addEventListener("click", () => {
+      openInputModal({
+        title: "Add Daily Task",
+        label: "Task Name",
+        placeholder: "e.g. Drink 2L water",
+        maxLength: 60,
+        saveLabel: "Add",
+        showAddAnother: true,
+        onSave: (title) => {
+          checkAndPerformDailyReset(false);
+          state.dailyTasks.push({
+            id: uid("daily"),
+            title,
+            doneToday: false
+          });
+          evaluateTodayDailyStar(false);
+          saveState();
+          renderAll();
+          showToast(`Added daily task "${title}"`);
+        }
+      });
+    });
+  }
 
   // Quick-Log Drawer Toggle in Selected Date Inspector
   const quickLogDrawer = document.getElementById("quick-log-drawer");
@@ -2656,13 +4356,39 @@ function initEvents() {
 
   document.getElementById("btn-modal-cancel").addEventListener("click", closeInputModal);
 
+  const modalWeightsGroup = document.getElementById("modal-list-weights");
+  if (modalWeightsGroup) {
+    modalWeightsGroup.addEventListener("click", (e) => {
+      const btn = e.target.closest(".weight-pill-btn");
+      if (!btn) return;
+      setModalWeight(btn.dataset.weight);
+    });
+  }
+
+  const addAnotherBtn = document.getElementById("btn-modal-add-another");
+  if (addAnotherBtn) {
+    addAnotherBtn.addEventListener("click", () => {
+      const name = listNameInput.value.trim();
+      if (!name) {
+        listNameInput.reportValidity();
+        listNameInput.focus();
+        return;
+      }
+      if (typeof pendingInputAction === "function") {
+        pendingInputAction(name, selectedListModalColor, selectedModalWeight);
+      }
+      listNameInput.value = "";
+      listNameInput.focus();
+    });
+  }
+
   document.getElementById("form-modal-list").addEventListener("submit", (e) => {
     e.preventDefault();
     const name = listNameInput.value.trim();
     if (!name) return;
 
     if (typeof pendingInputAction === "function") {
-      pendingInputAction(name, selectedListModalColor);
+      pendingInputAction(name, selectedListModalColor, selectedModalWeight);
     }
     closeInputModal();
   });
@@ -2789,7 +4515,7 @@ function initEvents() {
         normalizeLists(imported.lists);
         state = {
           templateVersion: TEMPLATE_VERSION,
-          theme: imported.theme || "dark",
+          theme: normalizeTheme(imported.theme),
           calendarView: imported.calendarView === "week" ? "week" : "month",
           activeListId: imported.activeListId || imported.lists[0].id,
           activeDecision: null,
@@ -2801,6 +4527,27 @@ function initEvents() {
           dailyTasks: Array.isArray(imported.dailyTasks)
             ? imported.dailyTasks
             : createDefaultDailyTasks(),
+          scheduledTasks: Array.isArray(imported.scheduledTasks)
+            ? imported.scheduledTasks
+            : [],
+          procrastinationTasks: Array.isArray(imported.procrastinationTasks)
+            ? imported.procrastinationTasks
+            : [],
+          heroListIds: Array.isArray(imported.heroListIds)
+            ? imported.heroListIds
+            : imported.heroListId
+              ? [imported.heroListId]
+              : [imported.activeListId || imported.lists[0].id],
+          collapsedCards: {
+            activityLists: Boolean(imported.collapsedCards && imported.collapsedCards.activityLists),
+            dailyTasks: Boolean(imported.collapsedCards && imported.collapsedCards.dailyTasks),
+            scheduledTasks: Boolean(imported.collapsedCards && imported.collapsedCards.scheduledTasks),
+            procrastination: Boolean(imported.collapsedCards && imported.collapsedCards.procrastination),
+            insights:
+              imported.collapsedCards && "insights" in imported.collapsedCards
+                ? Boolean(imported.collapsedCards.insights)
+                : true
+          },
           dailyStarsByDate:
             imported.dailyStarsByDate && typeof imported.dailyStarsByDate === "object"
               ? imported.dailyStarsByDate

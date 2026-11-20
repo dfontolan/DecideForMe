@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell" id="app-shell" data-mobile-view="decide">
     <!-- Top Header -->
     <header class="app-header">
       <div class="brand">
@@ -32,28 +32,32 @@
       <!-- Streak & Quick Stats Bar -->
       <div class="stats-bar" aria-label="Activity statistics">
         <div class="stat-pill" title="Consecutive days with at least one completed activity AND all Daily Tasks completed (protected by Streak Freezes)">
-          <span class="stat-icon">🔥</span>
+          <span class="stat-icon" aria-hidden="true">🔥</span>
           <div>
             <span class="stat-value" id="stat-current-streak">0d</span>
             <span class="stat-label">Streak <small id="stat-best-streak">(Best: 0d)</small></span>
           </div>
         </div>
         <div class="stat-pill" id="stat-pill-freezes" title="Earn 1 Streak Freeze every 3 consecutive active streak days (up to 3 max). Automatically used to protect your streak when you miss a day.">
-          <span class="stat-icon">❄️</span>
+          <span class="stat-icon" aria-hidden="true">❄️</span>
           <div>
             <span class="stat-value" id="stat-freeze-count">0/3</span>
             <span class="stat-label">Freezes <small id="stat-freeze-sub">(0/3d to +1)</small></span>
           </div>
         </div>
         <div class="stat-pill" title="Activities completed in the last 7 days">
-          <span class="stat-icon">⚡</span>
+          <span class="stat-icon stat-icon-svg" aria-hidden="true">
+            <svg class="ui-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          </span>
           <div>
             <span class="stat-value" id="stat-week-count">0</span>
             <span class="stat-label">This Week</span>
           </div>
         </div>
         <div class="stat-pill" title="Activities completed in the currently viewed calendar month">
-          <span class="stat-icon">📅</span>
+          <span class="stat-icon stat-icon-svg" aria-hidden="true">
+            <svg class="ui-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          </span>
           <div>
             <span class="stat-value" id="stat-month-count">0</span>
             <span class="stat-label">This Month</span>
@@ -61,25 +65,61 @@
         </div>
       </div>
 
-      <!-- Backup & Utility Actions -->
+      <!-- Top Utility Actions (Install App, Theme Picker, Settings Menu) -->
       <div class="header-actions">
         <button type="button" class="btn btn-primary btn-sm hidden" id="btn-install-pwa" title="Install DecideForMe on your device for offline access">
-          📲 Install App
+          <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Install App</span>
         </button>
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-theme-toggle" title="Switch Light / Dark theme">
-          <span id="theme-icon">☀️</span>
-        </button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-export" title="Download backup JSON file">
-          ⬇ Export Backup
-        </button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-import" title="Restore from a backup JSON file">
-          ⬆ Import
-        </button>
+        <div class="theme-picker" id="theme-picker-header">
+          <button type="button" class="btn btn-secondary btn-sm theme-picker-btn" id="btn-theme-toggle" aria-haspopup="menu" aria-expanded="false" title="Select theme">
+            <span id="theme-icon">🌙</span> <span id="theme-label">Dark Theme</span>
+            <svg class="ui-icon theme-caret" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="theme-dropdown hidden" id="theme-dropdown-header" role="menu" aria-label="Select theme">
+            <button type="button" class="theme-option" data-theme-value="dark" role="menuitemradio" aria-checked="true">
+              <span class="theme-option-icon">🌙</span>
+              <span class="theme-option-label">Dark Theme</span>
+              <span class="theme-option-check" aria-hidden="true">✓</span>
+            </button>
+            <button type="button" class="theme-option" data-theme-value="astrology" role="menuitemradio" aria-checked="false">
+              <span class="theme-option-icon">🔮</span>
+              <span class="theme-option-label">Astrology Theme</span>
+              <span class="theme-option-check" aria-hidden="true">✓</span>
+            </button>
+            <button type="button" class="theme-option" data-theme-value="tarot" role="menuitemradio" aria-checked="false">
+              <span class="theme-option-icon">🃏</span>
+              <span class="theme-option-label">Tarot Theme</span>
+              <span class="theme-option-check" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+        <div class="settings-menu-wrap" id="settings-menu-wrap">
+          <button type="button" class="btn btn-secondary btn-sm btn-settings-toggle" id="btn-settings-toggle" aria-haspopup="menu" aria-expanded="false" title="Data &amp; Backup Settings" aria-label="Data and Backup Settings">
+            <svg class="ui-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span class="settings-btn-label">Data</span>
+          </button>
+          <div class="settings-dropdown hidden" id="settings-dropdown" role="menu" aria-label="Data and Backup Settings">
+            <button type="button" class="theme-option" id="btn-export" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span class="theme-option-label">Export Backup</span>
+            </button>
+            <button type="button" class="theme-option" id="btn-import" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span class="theme-option-label">Import Backup</span>
+            </button>
+            <button type="button" class="theme-option" id="btn-about" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span class="theme-option-label">About</span>
+            </button>
+            <div class="menu-divider" role="separator"></div>
+            <button type="button" class="theme-option is-danger" id="btn-reset-data" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+              <span class="theme-option-label">Reset Data</span>
+            </button>
+          </div>
+        </div>
         <input type="file" id="file-import" accept=".json,application/json" hidden />
-        <button type="button" class="btn btn-outline-danger btn-sm" id="btn-reset-data" title="Delete all local data and restore default lists & settings">
-          <svg class="icon-svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
-          Reset Data
-        </button>
       </div>
     </header>
 
@@ -95,11 +135,11 @@
                 <!-- Populated by app.js -->
               </div>
             </div>
-            <h2 class="hero-title">What should we do next?</h2>
+            <h2 class="hero-title" id="hero-idle-title">What should we do next?</h2>
             <div class="hero-candidate-pills" id="hero-candidate-pills" aria-label="Checked candidates"></div>
             <div class="decision-cta-row">
               <button type="button" class="btn btn-primary btn-lg btn-decide" id="btn-decide">
-                <span class="dice-icon">🎲</span> Decide For Me!
+                <span class="dice-icon" id="decide-dice-icon">🎲</span> <span id="btn-decide-label">Decide For Me!</span>
               </button>
             </div>
           </div>
@@ -108,8 +148,8 @@
         <!-- Rolling / Shuffle State -->
         <div class="decision-state hidden" id="decision-rolling" aria-live="polite">
           <div class="rolling-header">
-            <span class="rolling-dice-spin" aria-hidden="true">🎲</span>
-            <span class="rolling-label">Rolling your checked pool...</span>
+            <span class="rolling-dice-spin" id="rolling-dice-icon" aria-hidden="true">🎲</span>
+            <span class="rolling-label" id="rolling-label-text">Rolling your checked pool...</span>
           </div>
           <div class="rolling-slot-window">
             <div class="rolling-slot" id="rolling-slot-text">Reading a book</div>
@@ -127,6 +167,7 @@
             <h2 class="chosen-title" id="chosen-title">Go to the Gym</h2>
           </div>
           <p class="chosen-list-subtitle" id="chosen-list-subtitle">From: 60+ Min Tasks</p>
+          <p class="theme-quip hidden" id="chosen-theme-quip"></p>
 
           <div class="hero-list-switcher-wrap active-reroll-switcher-wrap">
             <span class="hero-list-label">Re-roll from:</span>
@@ -140,7 +181,7 @@
               ✓ Mark Complete &amp; Log
             </button>
             <button type="button" class="btn btn-secondary" id="btn-reroll">
-              🎲 Re-roll <span class="reroll-btn-count hidden" id="active-reroll-badge">0</span>
+              <span id="btn-reroll-label">🎲 Re-roll</span> <span class="reroll-btn-count hidden" id="active-reroll-badge">0</span>
             </button>
           </div>
         </div>
@@ -152,131 +193,147 @@
       <!-- COLUMN 1 (LEFT): Unified Lists & Activity Pool Card -->
       <section class="column-left" aria-label="Activity Lists">
         <!-- Unified Lists & Activity Pool Card -->
-        <div class="card pool-card">
+        <div class="card pool-card" id="pool-card">
           <!-- Integrated List Tabs Header -->
-          <div class="lists-header-block">
-            <div class="section-header">
-              <span class="section-label">Activity Lists</span>
-              <div class="list-manage-actions">
-                <button type="button" class="btn-icon" id="btn-rename-list" title="Rename current list" aria-label="Rename current list">
-                  <svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                </button>
-                <button type="button" class="btn-icon danger" id="btn-delete-list" title="Delete current list" aria-label="Delete current list">
-                  <svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
-                </button>
-              </div>
-            </div>
-
-            <div class="list-tabs-container">
-              <div class="list-tabs" id="list-tabs" role="tablist" aria-label="Activity lists">
-                <!-- Populated by app.js (Draggable tabs) -->
-              </div>
-              <button type="button" class="btn btn-outline btn-sm" id="btn-new-list">
-                + New List
-              </button>
-            </div>
+          <div class="section-header">
+            <span class="section-label" id="section-label-activity-lists">Activity Lists</span>
+            <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-activity-lists" aria-expanded="true" aria-controls="pool-card-body" title="Collapse Activity Lists" aria-label="Collapse Activity Lists">
+              <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
           </div>
 
-          <!-- Active List Tasks Header -->
-          <div class="pool-header">
-            <div>
-              <div class="pool-title-row">
-                <span class="color-dot" id="current-list-color-dot"></span>
-                <h3 id="current-list-title">Activities</h3>
-                <span class="badge" id="current-list-count-badge" title="Checked / Total activities in this list">0/0</span>
+          <div class="collapsible-card-body" id="pool-card-body">
+            <div class="collapsible-card-inner">
+              <div class="lists-header-block">
+                <div class="list-tabs-container">
+                  <div class="list-tabs" id="list-tabs" role="tablist" aria-label="Activity lists">
+                    <!-- Populated by app.js (Draggable tabs) -->
+                  </div>
+                  <button type="button" class="btn btn-outline btn-sm" id="btn-new-list">
+                    + New List
+                  </button>
+                </div>
               </div>
-            </div>
-            <div class="pool-bulk-actions">
-              <button type="button" class="btn btn-ghost btn-xs" id="btn-check-all">Check All</button>
-              <button type="button" class="btn btn-ghost btn-xs" id="btn-uncheck-all">Uncheck All</button>
-              <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-activities" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete activities">
-                <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                <span id="btn-edit-activities-label">Edit</span>
-              </button>
+
+              <!-- Active List Tasks Header -->
+              <div class="pool-header">
+                <div class="pool-title-row">
+                  <span class="badge" id="current-list-count-badge" title="Checked / Total activities in this list">0/0</span>
+                  <div class="list-manage-actions hidden" id="list-manage-actions">
+                    <button type="button" class="btn-icon" id="btn-rename-list" title="Rename current list" aria-label="Rename current list">
+                      <svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    </button>
+                    <button type="button" class="btn-icon danger" id="btn-delete-list" title="Delete current list" aria-label="Delete current list">
+                      <svg class="icon-svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="pool-bulk-actions">
+                  <button type="button" class="btn btn-primary btn-xs" id="btn-add-activity">+ Add New</button>
+                  <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-check-all">Uncheck All</button>
+                  <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-activities" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete activities">
+                    <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    <span id="btn-edit-activities-label">Edit</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Activity Items List -->
+              <ul class="activity-list" id="activity-list">
+                <!-- Populated by app.js -->
+              </ul>
             </div>
           </div>
-
-          <!-- Add New Activity Form -->
-          <form class="add-item-form" id="form-add-item">
-            <input
-              type="text"
-              id="input-new-item"
-              class="input-text"
-              placeholder="Add an activity (e.g. Read 20 pages)"
-              required
-              maxlength="80"
-            />
-            <select id="select-new-weight" class="input-select" aria-label="Initial weight" title="Priority weight">
-              <option value="1">1x (Normal)</option>
-              <option value="2">2x (Likely)</option>
-              <option value="4">4x (Priority)</option>
-            </select>
-            <button type="submit" class="btn btn-primary">+ Add</button>
-          </form>
-
-          <!-- Activity Items List -->
-          <ul class="activity-list" id="activity-list">
-            <!-- Populated by app.js -->
-          </ul>
         </div>
-      </section>
 
-      <!-- COLUMN 2 (MIDDLE, NARROWER): Daily Tasks Card + All-Time Breakdown -->
-      <section class="column-middle" aria-label="Daily Tasks and All-Time Breakdown">
-        <!-- Daily Tasks Card -->
-        <div class="card daily-tasks-card" id="daily-tasks-card">
-          <div class="inspector-header">
-            <div>
-              <span class="section-label">Daily Checklist</span>
-              <h4>Daily Tasks</h4>
+      <!-- Procrastination List Card (Standalone under Activity Lists) -->
+      <div class="card procrastination-card" id="procrastination-card">
+        <div class="inspector-header">
+          <span class="section-label" id="section-label-procrastination">Procrastination List</span>
+          <div class="daily-header-actions">
+            <span class="badge" id="procrastination-count-badge">0 pending</span>
+            <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-procrastination" aria-expanded="true" aria-controls="procrastination-card-body" title="Collapse Procrastination List" aria-label="Collapse Procrastination List">
+              <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="collapsible-card-body" id="procrastination-card-body">
+          <div class="collapsible-card-inner">
+            <div class="daily-tasks-toolbar">
+              <button type="button" class="btn btn-primary btn-xs" id="btn-add-procrastination">+ Add Task</button>
+              <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-procrastination" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete procrastination tasks">
+                <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                <span id="btn-edit-procrastination-label">Edit</span>
+              </button>
             </div>
-            <div class="daily-header-actions">
+            <ul class="procrastination-list" id="procrastination-list">
+              <!-- Populated by app.js -->
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unified Today's Tasks Hub (Daily | Schedule) -->
+      <div class="card task-hub-card" id="task-hub-card">
+        <div class="section-header task-hub-header">
+          <div class="task-hub-title-group">
+            <span class="section-label">Today's Tasks</span>
+            <span class="info-tip" title="Daily Tasks earn a ★ Silver Star (3:00 AM reset). Pair all Daily &amp; due Scheduled tasks with an activity for a ⭐ Gold Star &amp; streak." aria-label="Task rules info">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            </span>
+          </div>
+          <div class="task-hub-tabs" role="tablist" aria-label="Task categories">
+            <button type="button" class="task-hub-tab active" id="tab-btn-daily" data-task-tab="daily" role="tab" aria-selected="true" aria-controls="daily-tasks-card">
+              <span id="section-label-daily-tasks">Daily Checklist</span>
               <span class="badge" id="daily-tasks-progress-badge">0/0 done</span>
+            </button>
+            <button type="button" class="task-hub-tab" id="tab-btn-schedule" data-task-tab="schedule" role="tab" aria-selected="false" aria-controls="scheduled-tasks-card">
+              <span id="section-label-scheduled-tasks">To-Do &amp; Schedule</span>
+              <span class="badge" id="scheduled-tasks-progress-badge">0/0 done</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="task-hub-panels">
+          <!-- Daily Tasks Panel -->
+          <div class="task-hub-panel daily-tasks-card" id="daily-tasks-card" role="tabpanel" aria-labelledby="tab-btn-daily">
+            <div class="daily-tasks-toolbar">
+              <button type="button" class="btn btn-primary btn-xs" id="btn-add-daily">+ Add New</button>
               <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-daily" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete daily tasks">
                 <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                 <span id="btn-edit-daily-label">Edit</span>
               </button>
             </div>
+            <ul class="daily-tasks-list" id="daily-tasks-list">
+              <!-- Populated by app.js -->
+            </ul>
           </div>
-          <p class="text-muted small daily-tasks-subtitle">
-            Complete all daily tasks for a <strong>★ Silver Star</strong>, or pair with an activity for a <strong>⭐ Gold Star &amp; streak</strong> (resets at 3:00 AM).
-          </p>
 
-          <!-- Add Daily Task Form -->
-          <form class="add-daily-form" id="form-add-daily">
-            <input
-              type="text"
-              id="input-new-daily"
-              class="input-text"
-              placeholder="Add daily task..."
-              required
-              maxlength="60"
-            />
-            <button type="submit" class="btn btn-primary btn-sm">+ Add</button>
-          </form>
-
-          <!-- Daily Tasks List -->
-          <ul class="daily-tasks-list" id="daily-tasks-list">
-            <!-- Populated by app.js -->
-          </ul>
-        </div>
-
-        <!-- All-Time Breakdown Card -->
-        <div class="card insights-card">
-          <div class="inspector-header">
-            <div>
-              <span class="section-label">All-Time Breakdown</span>
-              <h4>Most Completed Activities</h4>
+          <!-- To-Do & Schedule Panel -->
+          <div class="task-hub-panel scheduled-tasks-card hidden" id="scheduled-tasks-card" role="tabpanel" aria-labelledby="tab-btn-schedule">
+            <div class="scheduled-tasks-toolbar">
+              <div class="view-toggle-group scheduled-view-tabs" role="tablist" aria-label="To-Do &amp; Schedule view">
+                <button type="button" class="view-toggle-btn active" id="btn-sched-view-today" role="tab" aria-selected="true">Today</button>
+                <button type="button" class="view-toggle-btn" id="btn-sched-view-upcoming" role="tab" aria-selected="false">Upcoming</button>
+              </div>
+              <div class="scheduled-toolbar-actions">
+                <button type="button" class="btn btn-primary btn-xs" id="btn-add-scheduled">+ Add Task</button>
+                <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-scheduled" aria-pressed="false" title="Toggle edit mode to reorder, edit, or delete scheduled tasks">
+                  <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                  <span id="btn-edit-scheduled-label">Edit</span>
+                </button>
+              </div>
             </div>
-            <span class="text-muted small" id="total-alltime-count">0 total</span>
-          </div>
-          <div class="top-activities-list" id="top-activities-list">
-            <!-- Populated by app.js -->
+            <ul class="scheduled-tasks-list" id="scheduled-tasks-list">
+              <!-- Populated by app.js -->
+            </ul>
           </div>
         </div>
+      </div>
       </section>
 
-      <!-- COLUMN 3 (RIGHT, WIDER): Calendar (Monthly & Weekly) & Selected Date Log -->
+      <!-- COLUMN 2 (RIGHT): Calendar (Monthly & Weekly), Selected Date Log & Insights -->
       <section class="column-right" aria-label="Activity Calendar and Date Log">
         <!-- Calendar Card -->
         <div class="card calendar-card">
@@ -288,7 +345,6 @@
                   🎲 0 re-rolls
                 </span>
               </div>
-              <p class="text-muted small">Click any day to inspect or log completed activities</p>
             </div>
 
             <div class="calendar-controls">
@@ -300,9 +356,13 @@
 
               <!-- Period Navigation -->
               <div class="calendar-nav">
-                <button type="button" class="btn btn-secondary btn-xs" id="btn-cal-prev" aria-label="Previous period">◀</button>
+                <button type="button" class="btn btn-secondary btn-xs" id="btn-cal-prev" aria-label="Previous period">
+                  <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
                 <button type="button" class="btn btn-ghost btn-xs" id="btn-cal-today">Today</button>
-                <button type="button" class="btn btn-secondary btn-xs" id="btn-cal-next" aria-label="Next period">▶</button>
+                <button type="button" class="btn btn-secondary btn-xs" id="btn-cal-next" aria-label="Next period">
+                  <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
               </div>
             </div>
           </div>
@@ -342,7 +402,9 @@
 
           <!-- Daily Note / Highlight Bar -->
           <form class="daily-note-bar" id="form-daily-note">
-            <span class="daily-note-icon" aria-hidden="true">📝</span>
+            <span class="daily-note-icon" aria-hidden="true">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            </span>
             <input
               type="text"
               id="input-daily-note"
@@ -373,28 +435,101 @@
             <!-- Populated by app.js -->
           </ul>
         </div>
+
+        <!-- All-Time Breakdown Card -->
+        <div class="card insights-card is-collapsed" id="insights-card">
+          <div class="inspector-header">
+            <div>
+              <span class="section-label">All-Time Breakdown</span>
+              <h4>Most Completed Activities</h4>
+            </div>
+            <div class="daily-header-actions">
+              <span class="text-muted small" id="total-alltime-count">0 total</span>
+              <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-insights" aria-expanded="false" aria-controls="insights-card-body" title="Expand All-Time Breakdown" aria-label="Expand All-Time Breakdown">
+                <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+            </div>
+          </div>
+          <div class="collapsible-card-body" id="insights-card-body">
+            <div class="collapsible-card-inner">
+              <div class="top-activities-list" id="top-activities-list">
+                <!-- Populated by app.js -->
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
-    <!-- Bottom Footer (Mobile Utility Actions & Subtle Credit) -->
+    <!-- Bottom Footer (Mobile Theme & Data Menu + Subtle Credit) -->
     <footer class="app-footer">
-      <div class="footer-mobile-actions">
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-theme-toggle-footer" title="Switch Light / Dark theme">
-          <span id="theme-icon-footer">☀️</span> Theme
-        </button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-export-footer" title="Download backup JSON file">
-          ⬇ Export Backup
-        </button>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-import-footer" title="Restore from a backup JSON file">
-          ⬆ Import
-        </button>
-        <button type="button" class="btn btn-outline-danger btn-sm footer-reset-btn" id="btn-reset-data-footer" title="Delete all local data and restore default lists & settings">
-          <svg class="icon-svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
-          Reset Data
-        </button>
+      <div class="footer-data-wrap">
+        <div class="theme-picker theme-picker-up" id="theme-picker-footer">
+          <button type="button" class="btn btn-secondary btn-sm theme-picker-btn" id="btn-theme-toggle-footer" aria-haspopup="menu" aria-expanded="false" title="Select theme">
+            <span id="theme-icon-footer">🌙</span> <span id="theme-label-footer">Dark Theme</span>
+            <svg class="ui-icon theme-caret" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div class="theme-dropdown hidden" id="theme-dropdown-footer" role="menu" aria-label="Select theme">
+            <button type="button" class="theme-option" data-theme-value="dark" role="menuitemradio" aria-checked="true">
+              <span class="theme-option-icon">🌙</span>
+              <span class="theme-option-label">Dark Theme</span>
+              <span class="theme-option-check" aria-hidden="true">✓</span>
+            </button>
+            <button type="button" class="theme-option" data-theme-value="astrology" role="menuitemradio" aria-checked="false">
+              <span class="theme-option-icon">🔮</span>
+              <span class="theme-option-label">Astrology Theme</span>
+              <span class="theme-option-check" aria-hidden="true">✓</span>
+            </button>
+            <button type="button" class="theme-option" data-theme-value="tarot" role="menuitemradio" aria-checked="false">
+              <span class="theme-option-icon">🃏</span>
+              <span class="theme-option-label">Tarot Theme</span>
+              <span class="theme-option-check" aria-hidden="true">✓</span>
+            </button>
+          </div>
+        </div>
+        <div class="settings-menu-wrap settings-menu-up" id="settings-menu-wrap-footer">
+          <button type="button" class="btn btn-secondary btn-sm btn-settings-toggle" id="btn-settings-toggle-footer" aria-haspopup="menu" aria-expanded="false" title="Data &amp; Backup Settings" aria-label="Data and Backup Settings">
+            <svg class="ui-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Data</span>
+          </button>
+          <div class="settings-dropdown hidden" id="settings-dropdown-footer" role="menu" aria-label="Data and Backup Settings">
+            <button type="button" class="theme-option" id="btn-export-footer" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span class="theme-option-label">Export Backup</span>
+            </button>
+            <button type="button" class="theme-option" id="btn-import-footer" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span class="theme-option-label">Import Backup</span>
+            </button>
+            <button type="button" class="theme-option" id="btn-about-footer" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span class="theme-option-label">About</span>
+            </button>
+            <div class="menu-divider" role="separator"></div>
+            <button type="button" class="theme-option is-danger" id="btn-reset-data-footer" role="menuitem">
+              <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+              <span class="theme-option-label">Reset Data</span>
+            </button>
+          </div>
+        </div>
       </div>
-      <p class="app-credit">v1.0 - Vibe coded by xXx_Daniel_xXx</p>
     </footer>
+
+    <!-- Sticky Mobile Bottom Navigation (<= 640px) -->
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Mobile navigation">
+      <button type="button" class="mobile-nav-btn active" data-mobile-view="decide" aria-pressed="true">
+        <svg class="ui-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"></circle><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"></circle><circle cx="12" cy="12" r="1.2" fill="currentColor"></circle><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"></circle><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"></circle></svg>
+        <span>Decide</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-view="tasks" aria-pressed="false">
+        <svg class="ui-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+        <span>Tasks</span>
+      </button>
+      <button type="button" class="mobile-nav-btn" data-mobile-view="calendar" aria-pressed="false">
+        <svg class="ui-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <span>Calendar</span>
+      </button>
+    </nav>
   </div>
 
   <!-- Instant Floating Tooltip for Monthly Calendar Pills & "+N more" -->
@@ -418,9 +553,89 @@
           <label class="form-label">List Color</label>
           <div class="color-picker-group" id="modal-list-colors" role="radiogroup" aria-label="List color"></div>
         </div>
+        <div class="modal-weight-section hidden" id="modal-list-weight-section">
+          <label class="form-label">Priority Weight</label>
+          <div class="weight-picker-group" id="modal-list-weights" role="radiogroup" aria-label="Priority weight">
+            <button type="button" class="weight-pill-btn is-selected" data-weight="1" role="radio" aria-checked="true">1x (Normal)</button>
+            <button type="button" class="weight-pill-btn" data-weight="2" role="radio" aria-checked="false">2x (Likely)</button>
+            <button type="button" class="weight-pill-btn" data-weight="4" role="radio" aria-checked="false">4x (Priority)</button>
+          </div>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-modal-cancel">Cancel</button>
+          <button type="button" class="btn btn-secondary hidden" id="btn-modal-add-another">+ Add Another</button>
           <button type="submit" class="btn btn-primary" id="btn-modal-save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Pop-up Modal for Creating / Editing a To-Do & Scheduled Task -->
+  <div class="modal-backdrop hidden" id="modal-scheduled-task" role="dialog" aria-modal="true" aria-labelledby="modal-scheduled-title">
+    <div class="modal-card modal-scheduled-card">
+      <h3 id="modal-scheduled-title">Add Scheduled Task</h3>
+      <form id="form-modal-scheduled">
+        <label class="form-label" for="input-scheduled-title">Task Name</label>
+        <input
+          type="text"
+          id="input-scheduled-title"
+          class="input-text"
+          placeholder="e.g., Pay rent, Dentist appointment, Water plants..."
+          required
+          maxlength="80"
+        />
+
+        <div class="modal-sched-section">
+          <label class="form-label">Schedule Type</label>
+          <div class="weight-picker-group sched-type-group" id="sched-type-group" role="radiogroup" aria-label="Schedule type">
+            <button type="button" class="weight-pill-btn is-selected" data-sched-type="once" role="radio" aria-checked="true">One-Time</button>
+            <button type="button" class="weight-pill-btn" data-sched-type="repeat" role="radio" aria-checked="false">Repeating</button>
+          </div>
+        </div>
+
+        <!-- One-Time Date Options -->
+        <div class="modal-sched-section" id="sched-once-options">
+          <label class="form-label" for="input-scheduled-date">Date</label>
+          <div class="sched-quick-dates">
+            <button type="button" class="btn btn-secondary btn-xs" id="btn-sched-today">Today</button>
+            <button type="button" class="btn btn-secondary btn-xs" id="btn-sched-tomorrow">Tomorrow</button>
+            <input type="date" id="input-scheduled-date" class="input-text sched-date-input" required />
+          </div>
+        </div>
+
+        <!-- Repeating Options -->
+        <div class="modal-sched-section hidden" id="sched-repeat-options">
+          <label class="form-label">Repeat Frequency</label>
+          <div class="weight-picker-group sched-freq-group" id="sched-freq-group" role="radiogroup" aria-label="Repeat frequency">
+            <button type="button" class="weight-pill-btn is-selected" data-sched-freq="weekly" role="radio" aria-checked="true">Days of Week</button>
+            <button type="button" class="weight-pill-btn" data-sched-freq="monthly" role="radio" aria-checked="false">Day of Month</button>
+          </div>
+
+          <div class="sched-weekly-picker" id="sched-weekly-picker">
+            <label class="form-label">Select Weekdays</label>
+            <div class="weekday-pill-group" id="sched-weekday-pills" role="group" aria-label="Select days of week">
+              <button type="button" class="weekday-pill-btn" data-weekday="0" aria-pressed="false">Mon</button>
+              <button type="button" class="weekday-pill-btn" data-weekday="1" aria-pressed="false">Tue</button>
+              <button type="button" class="weekday-pill-btn" data-weekday="2" aria-pressed="false">Wed</button>
+              <button type="button" class="weekday-pill-btn" data-weekday="3" aria-pressed="false">Thu</button>
+              <button type="button" class="weekday-pill-btn" data-weekday="4" aria-pressed="false">Fri</button>
+              <button type="button" class="weekday-pill-btn" data-weekday="5" aria-pressed="false">Sat</button>
+              <button type="button" class="weekday-pill-btn" data-weekday="6" aria-pressed="false">Sun</button>
+            </div>
+          </div>
+
+          <div class="sched-monthly-picker hidden" id="sched-monthly-picker">
+            <label class="form-label" for="input-scheduled-monthday">Day of the Month (1–31)</label>
+            <div class="sched-monthday-row">
+              <input type="number" id="input-scheduled-monthday" class="input-text sched-monthday-input" min="1" max="31" value="1" />
+              <span class="text-muted small">Shorter months use the last day of that month.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-sched-modal-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-sched-modal-save">Save Task</button>
         </div>
       </form>
     </div>
@@ -436,6 +651,47 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="btn-confirm-cancel">Cancel</button>
         <button type="button" class="btn btn-danger" id="btn-confirm-accept">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Modal -->
+  <div class="modal-backdrop hidden" id="modal-about" role="dialog" aria-modal="true" aria-labelledby="modal-about-title">
+    <div class="modal-card modal-about-card">
+      <div class="about-header">
+        <div class="about-icon-wrap" aria-hidden="true">
+          <img src="icons/icon.svg" alt="" width="44" height="44" />
+        </div>
+        <div>
+          <div class="about-title-row">
+            <h3 id="modal-about-title">DecideForMe</h3>
+            <span class="badge about-version-badge">v1.1</span>
+          </div>
+          <p class="text-muted small">Activity Picker, Task Tracker &amp; Habit Logger</p>
+        </div>
+      </div>
+
+      <p class="about-description">
+        For people like me who do not want to choose what to do.
+      </p>
+
+      <dl class="about-meta-list">
+        <div class="about-meta-row">
+          <dt>Version</dt>
+          <dd>1.1</dd>
+        </div>
+        <div class="about-meta-row">
+          <dt>Author</dt>
+          <dd>xXx_daniel_xXx</dd>
+        </div>
+        <div class="about-meta-row">
+          <dt>Daily Rollover</dt>
+          <dd>3:00 AM local time</dd>
+        </div>
+      </dl>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="btn-about-close">Close</button>
       </div>
     </div>
   </div>
