@@ -4774,7 +4774,63 @@ async function checkForAppUpdates() {
 
     if (!updateFound && !registration.installing && !registration.waiting) {
       registration.removeEventListener("updatefound", onUpdateFound);
-      showToast("You're on the latest version!");
+
+      if (!("caches" in window)) {
+        showToast("You're on the latest version!");
+        return;
+      }
+
+      const coreAssets = [
+        "./index.html",
+        "./styles.css",
+        "./app.js",
+        "./firebase-sync.js",
+        "./manifest.json"
+      ];
+
+      const fetched = await Promise.all(
+        coreAssets.map(async (url) => {
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) {
+            throw new Error(`Failed to fetch ${url}: ${res.status}`);
+          }
+          const text = await res.clone().text();
+          return { url, res, text };
+        })
+      );
+
+      let hasAssetChanges = false;
+      for (const { url, text } of fetched) {
+        const cached = await caches.match(url);
+        if (!cached || (await cached.text()) !== text) {
+          hasAssetChanges = true;
+          break;
+        }
+      }
+
+      if (!hasAssetChanges) {
+        showToast("You're on the latest version!");
+        return;
+      }
+
+      const cacheNames = await caches.keys();
+      if (cacheNames.length > 0) {
+        await Promise.all(
+          cacheNames.map(async (cacheName) => {
+            const cache = await caches.open(cacheName);
+            await Promise.all(
+              fetched.map(async ({ url, res }) => {
+                await cache.put(url, res.clone());
+                if (url === "./index.html") {
+                  await cache.put("./", res.clone());
+                }
+              })
+            );
+          })
+        );
+      }
+
+      triggerReload();
     }
   } catch (err) {
     console.warn("Update check failed:", err);

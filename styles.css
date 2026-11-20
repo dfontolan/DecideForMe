@@ -563,27 +563,57 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-right: 112px;
 }
 
 /* Theme, Account & Settings Popovers */
 .theme-picker,
-.account-menu-wrap,
 .settings-menu-wrap {
   position: relative;
   display: inline-flex;
 }
 
+.account-menu-wrap {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+  z-index: 220;
+  display: inline-flex;
+}
+
 .theme-picker-btn,
-.btn-account-toggle,
 .btn-settings-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
+.account-menu-wrap .btn-account-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  border-radius: 999px;
+  box-shadow: var(--shadow-card);
+}
+
+.account-menu-wrap .btn-account-toggle .theme-caret {
+  width: 11px;
+  height: 11px;
+}
+
+#account-btn-label {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sync-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-muted);
   flex-shrink: 0;
@@ -3675,6 +3705,10 @@ body {
     margin-bottom: 12px;
   }
 
+  .brand {
+    padding-right: 108px;
+  }
+
   .stats-bar {
     width: 100%;
     display: grid;
@@ -3724,6 +3758,11 @@ body {
     flex-wrap: wrap;
     justify-content: center;
     gap: 6px;
+    padding-right: 0;
+  }
+
+  .header-actions:has(#btn-install-pwa.hidden) {
+    display: contents;
   }
 
   .header-actions #theme-picker-header,
