@@ -2,7 +2,7 @@
  * DecideForMe — Offline-First Service Worker
  */
 
-const CACHE_NAME = "decide-for-me-pwa-v19";
+const CACHE_NAME = "decide-for-me-pwa-v20";
 const PRECACHE_ASSETS = [
   "./",
   "./index.html",
