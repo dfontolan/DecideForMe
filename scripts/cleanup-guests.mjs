@@ -15,6 +15,7 @@
  *   node cleanup-guests.mjs
  */
 
+import { appendFileSync } from "node:fs";
 import { initializeApp, cert, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
@@ -273,6 +274,68 @@ async function main() {
       `[cleanup-guests] done deletedDocs=${deletedDocs} deletedAuth=${deletedAuth} errors=${errors}`
     );
   }
+
+  writeGitHubSummary({
+    anonCount: anonUsers.size,
+    guestDocsCount: docsByUid.size,
+    toDelete,
+    deletedDocs,
+    deletedAuth,
+    errors
+  });
+}
+
+function writeGitHubSummary({
+  anonCount,
+  guestDocsCount,
+  toDelete,
+  deletedDocs,
+  deletedAuth,
+  errors
+}) {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  const inactiveCount = toDelete.filter((x) => x.reason.startsWith("inactive_")).length;
+  const templateCount = toDelete.filter((x) => x.reason === "template_only").length;
+
+  const lines = [
+    `## Guest Cleanup (${DRY_RUN ? "Dry Run" : "Live"})`,
+    "",
+    "| Metric | Count |",
+    "| --- | ---: |",
+    `| Anonymous Auth users scanned | ${anonCount} |`,
+    `| Guest Firestore docs scanned | ${guestDocsCount} |`,
+    `| Matched for cleanup | ${toDelete.length} |`,
+    `| — Inactive (>= ${INACTIVE_DAYS}d) | ${inactiveCount} |`,
+    `| — Template-only (>= ${TEMPLATE_GRACE_HOURS}h) | ${templateCount} |`
+  ];
+
+  if (!DRY_RUN) {
+    lines.push(
+      `| Firestore docs deleted | ${deletedDocs} |`,
+      `| Auth users deleted | ${deletedAuth} |`,
+      `| Errors | ${errors} |`
+    );
+  }
+
+  if (toDelete.length > 0) {
+    const preview = toDelete.slice(0, 50);
+    lines.push(
+      "",
+      `### ${DRY_RUN ? "Would Delete" : "Deleted"} (${toDelete.length}${toDelete.length > 50 ? ", showing first 50" : ""})`,
+      "",
+      "| UID | Reason | Firestore Doc | Auth User | Last Active |",
+      "| --- | --- | :---: | :---: | --- |",
+      ...preview.map(
+        (item) =>
+          `| \`${item.uid}\` | \`${item.reason}\` | ${item.hasDoc ? "yes" : "no"} | ${item.hasAuth ? "yes" : "no"} | ${item.lastActiveIso} |`
+      )
+    );
+  }
+
+  lines.push("");
+  appendFileSync(summaryPath, lines.join("\n"), "utf8");
 }
 
 main().catch((err) => {
