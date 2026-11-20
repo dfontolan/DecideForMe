@@ -9,10 +9,17 @@ service cloud.firestore {
     //
     // Collection: users
     // Document ID: {userId} (matches Firebase Auth UID, including anonymous/guest, Google Sign-In, & username/password)
-    // Fields:
-    //   - state: map (required, max 50 top-level keys) - serialized DecideForMe app state
-    //   - updatedAt: timestamp (required) - last sync timestamp
-    //   - accountType: string (optional, 'guest' | 'google' | 'username') - authentication provider type
+    // Formats:
+    //   1. Encrypted client-side state format:
+    //      - payload: string (required, 1..1048576 bytes) - encrypted DecideForMe app state
+    //      - iv: string (required, 1..128 bytes) - initialization vector
+    //      - v: int (required, == 1) - encryption schema version
+    //      - updatedAt: timestamp (required) - last sync timestamp
+    //      - accountType: string (optional, 'guest' | 'google' | 'username') - authentication provider type
+    //   2. Legacy plaintext state format (backwards compatibility):
+    //      - state: map (required, max 50 top-level keys) - serialized DecideForMe app state
+    //      - updatedAt: timestamp (required) - last sync timestamp
+    //      - accountType: string (optional, 'guest' | 'google' | 'username') - authentication provider type
     //
     // ===============================================================
 
@@ -44,13 +51,35 @@ service cloud.firestore {
     // Domain Validators (Used in both create and update)
     // ===============================================================
 
-    function isValidUserState(data) {
+    function hasValidCommonUserFields(data) {
+      return data.updatedAt is timestamp &&
+             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google', 'username']));
+    }
+
+    function isValidEncryptedUserState(data) {
+      return hasOnlyAllowedFields(['payload', 'iv', 'v', 'updatedAt', 'accountType']) &&
+             hasRequiredFields(['payload', 'iv', 'v', 'updatedAt']) &&
+             data.payload is string &&
+             data.payload.size() > 0 &&
+             data.payload.size() <= 1048576 &&
+             data.iv is string &&
+             data.iv.size() > 0 &&
+             data.iv.size() <= 128 &&
+             data.v is int &&
+             data.v == 1 &&
+             hasValidCommonUserFields(data);
+    }
+
+    function isValidLegacyUserState(data) {
       return hasOnlyAllowedFields(['state', 'updatedAt', 'accountType']) &&
              hasRequiredFields(['state', 'updatedAt']) &&
              data.state is map &&
              data.state.keys().size() <= 50 &&
-             data.updatedAt is timestamp &&
-             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google', 'username']));
+             hasValidCommonUserFields(data);
+    }
+
+    function isValidUserState(data) {
+      return isValidEncryptedUserState(data) || isValidLegacyUserState(data);
     }
 
     // ===============================================================

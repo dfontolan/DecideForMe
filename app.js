@@ -4935,7 +4935,15 @@ function initPwa() {
 window.DecideForMeApp = {
   getState: () => state,
   applyCloudState: (nextState) => {
-    state = normalizeLoadedState(JSON.parse(JSON.stringify(nextState)));
+    const prevLocal = state;
+    const mergedNext = {
+      ...JSON.parse(JSON.stringify(nextState)),
+      collapsedCards: prevLocal?.collapsedCards,
+      activeDecision: prevLocal?.activeDecision,
+      activeListId: prevLocal?.activeListId,
+      calendarView: prevLocal?.calendarView
+    };
+    state = normalizeLoadedState(mergedNext);
     state.lists.forEach(syncListColorReferences);
     checkAndPerformDailyReset(false);
     saveState(true);

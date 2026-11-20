@@ -98,6 +98,108 @@ function sanitizeForFirestore(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
+const LOCAL_ONLY_STATE_KEYS = [
+  "collapsedCards",
+  "activeDecision",
+  "activeListId",
+  "calendarView"
+];
+
+function sanitizeCloudState(obj) {
+  const cloned = sanitizeForFirestore(obj);
+  if (cloned && typeof cloned === "object") {
+    for (const key of LOCAL_ONLY_STATE_KEYS) {
+      delete cloned[key];
+    }
+  }
+  return cloned;
+}
+
+const CRYPTO_PEPPER = "DecideForMe-Sync-v1-2026";
+const CRYPTO_VERSION = 1;
+const cryptoKeyCache = new Map();
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function getUserCryptoKey(uid) {
+  if (cryptoKeyCache.has(uid)) {
+    return cryptoKeyCache.get(uid);
+  }
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(`${CRYPTO_PEPPER}:${uid}`),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: encoder.encode(`dfm-salt:${uid}`),
+      iterations: 10000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+  cryptoKeyCache.set(uid, key);
+  return key;
+}
+
+async function encryptStatePayload(uid, stateObj) {
+  const key = await getUserCryptoKey(uid);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(JSON.stringify(stateObj));
+  const cipherBuffer = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoded
+  );
+  return {
+    payload: bytesToBase64(new Uint8Array(cipherBuffer)),
+    iv: bytesToBase64(iv),
+    v: CRYPTO_VERSION
+  };
+}
+
+async function decryptCloudData(uid, cloudData) {
+  if (!cloudData || typeof cloudData !== "object") return null;
+  if (typeof cloudData.payload === "string" && typeof cloudData.iv === "string") {
+    const key = await getUserCryptoKey(uid);
+    const iv = base64ToBytes(cloudData.iv);
+    const cipherBytes = base64ToBytes(cloudData.payload);
+    const plainBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      cipherBytes
+    );
+    return JSON.parse(new TextDecoder().decode(plainBuffer));
+  }
+  if (cloudData.state && typeof cloudData.state === "object") {
+    return cloudData.state;
+  }
+  return null;
+}
+
 function setSyncStatus(status, detail = "") {
   const dot = document.getElementById("account-sync-dot");
   const statusEl = document.getElementById("account-sync-status");
@@ -336,17 +438,19 @@ function mergeLists(cloudLists = [], localLists = [], deletedIds = {}) {
 }
 
 function mergeLocalAndCloudState(localState, cloudState, preferLocal = false) {
-  if (!cloudState) return localState;
-  if (!localState || (!preferLocal && isUntouchedDefaultState(localState))) return cloudState;
+  const cleanCloud = cloudState ? sanitizeCloudState(cloudState) : null;
+  const cleanLocal = localState ? sanitizeCloudState(localState) : null;
+  if (!cleanCloud) return cleanLocal;
+  if (!cleanLocal || (!preferLocal && isUntouchedDefaultState(cleanLocal))) return cleanCloud;
 
-  const cloudResetAt = typeof cloudState.resetAt === "number" ? cloudState.resetAt : 0;
-  const localResetAt = typeof localState.resetAt === "number" ? localState.resetAt : 0;
-  if (cloudResetAt > localResetAt) return cloudState;
-  if (localResetAt > cloudResetAt) return localState;
+  const cloudResetAt = typeof cleanCloud.resetAt === "number" ? cleanCloud.resetAt : 0;
+  const localResetAt = typeof cleanLocal.resetAt === "number" ? cleanLocal.resetAt : 0;
+  if (cloudResetAt > localResetAt) return cleanCloud;
+  if (localResetAt > cloudResetAt) return cleanLocal;
 
-  const deletedIds = mergeDeletedIds(cloudState.deletedIds, localState.deletedIds);
-  const primary = preferLocal ? localState : cloudState;
-  const secondary = preferLocal ? cloudState : localState;
+  const deletedIds = mergeDeletedIds(cleanCloud.deletedIds, cleanLocal.deletedIds);
+  const primary = preferLocal ? cleanLocal : cleanCloud;
+  const secondary = preferLocal ? cleanCloud : cleanLocal;
 
   return {
     ...primary,
@@ -371,7 +475,7 @@ function mergeLocalAndCloudState(localState, cloudState, preferLocal = false) {
 
 async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false) {
   if (!user || user.isAnonymous) return;
-  const sanitized = sanitizeForFirestore(stateObj);
+  const sanitized = sanitizeCloudState(stateObj);
   const json = JSON.stringify(sanitized);
   if (json === lastSyncedJson && !forceMetadataUpdate) {
     setSyncStatus("synced");
@@ -381,8 +485,9 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
   lastSyncedJson = json;
   setSyncStatus("syncing");
   try {
+    const encrypted = await encryptStatePayload(user.uid, sanitized);
     await setDoc(doc(db, "users", user.uid), {
-      state: sanitized,
+      ...encrypted,
       accountType: getAccountType(user),
       updatedAt: serverTimestamp()
     });
@@ -397,7 +502,10 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
 
 function scheduleSave(stateObj) {
   if (!currentUser || currentUser.isAnonymous) return;
-  const sanitized = sanitizeForFirestore(stateObj);
+  const sanitized = sanitizeCloudState(stateObj);
+  if (JSON.stringify(sanitized) === lastSyncedJson && !pendingState) {
+    return;
+  }
   pendingState = sanitized;
   setSyncStatus("syncing");
   if (saveTimer) clearTimeout(saveTimer);
@@ -486,15 +594,18 @@ async function attachUserSync(user) {
             }
           } else {
             const cloudData = snapshot.data();
-            const cloudState = cloudData?.state;
+            const cloudState = await decryptCloudData(user.uid, cloudData);
+            const needsEncryptionUpgrade = Boolean(cloudData && !cloudData.payload && cloudData.state);
             const needsMetadataUpdate =
-              cloudData?.accountType !== getAccountType(user);
+              cloudData?.accountType !== getAccountType(user) || needsEncryptionUpgrade;
 
             if (cloudState) {
-              const merged = mergeLocalAndCloudState(localLatest, cloudState, hasPendingLocal);
-              const mergedJson = JSON.stringify(sanitizeForFirestore(merged));
-              const cloudJson = JSON.stringify(sanitizeForFirestore(cloudState));
-              const localJson = localLatest ? JSON.stringify(sanitizeForFirestore(localLatest)) : "";
+              const cleanCloud = sanitizeCloudState(cloudState);
+              const cleanLocal = localLatest ? sanitizeCloudState(localLatest) : null;
+              const merged = mergeLocalAndCloudState(cleanLocal, cleanCloud, hasPendingLocal);
+              const mergedJson = JSON.stringify(merged);
+              const cloudJson = JSON.stringify(cleanCloud);
+              const localJson = cleanLocal ? JSON.stringify(cleanLocal) : "";
 
               lastSyncedJson = cloudJson;
               if (mergedJson !== localJson) {
@@ -529,14 +640,20 @@ async function attachUserSync(user) {
 
       if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
       if (!snapshot.exists()) return;
-      const remoteState = snapshot.data()?.state;
-      if (!remoteState) return;
-      const remoteJson = JSON.stringify(sanitizeForFirestore(remoteState));
-      if (remoteJson === lastSyncedJson) return;
+      try {
+        const remoteState = await decryptCloudData(user.uid, snapshot.data());
+        if (!remoteState) return;
+        const cleanRemote = sanitizeCloudState(remoteState);
+        const remoteJson = JSON.stringify(cleanRemote);
+        if (remoteJson === lastSyncedJson) return;
 
-      lastSyncedJson = remoteJson;
-      window.DecideForMeApp?.applyCloudState(remoteState);
-      setSyncStatus("synced");
+        lastSyncedJson = remoteJson;
+        window.DecideForMeApp?.applyCloudState(cleanRemote);
+        setSyncStatus("synced");
+      } catch (decryptErr) {
+        console.warn("Firestore snapshot decrypt error:", decryptErr);
+        setSyncStatus("error");
+      }
     },
     (err) => {
       console.warn("Firestore snapshot listener error:", err);
