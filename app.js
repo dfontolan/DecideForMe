@@ -191,10 +191,6 @@ let completingDecisionTimers = [];
 let winnerAuraTimer = null;
 let modalMode = "create"; // "create" | "rename"
 let draggedListId = null;
-let draggedItemId = null;
-let draggedDailyId = null;
-let draggedScheduledId = null;
-let draggedProcrastId = null;
 let quickLogFilterListId = "ALL";
 let pendingConfirmAction = null;
 let pendingInputAction = null;
@@ -1185,6 +1181,160 @@ function bindTouchReorder({
   });
 }
 
+function syncEditModeButton(btnId, labelId, isEditing) {
+  const btn = document.getElementById(btnId);
+  const label = document.getElementById(labelId);
+  if (btn) {
+    btn.classList.toggle("is-active", isEditing);
+    btn.setAttribute("aria-pressed", isEditing ? "true" : "false");
+  }
+  if (label) {
+    label.textContent = isEditing ? "Done" : "Edit";
+  }
+}
+
+function reorderArrayById(arr, fromId, toId) {
+  if (!Array.isArray(arr)) return false;
+  const fromIdx = arr.findIndex((item) => item.id === fromId);
+  const toIdx = arr.findIndex((item) => item.id === toId);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return false;
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  return true;
+}
+
+/**
+ * Delegated HTML5 drag-and-drop + touch-grip reorder for a list container.
+ * Bound once in initEvents() so individual <li> renders don't attach drag closures.
+ */
+function bindListDragReorder({
+  containerEl,
+  itemSelector,
+  datasetKey,
+  onReorder
+}) {
+  if (!containerEl) return;
+  let draggedId = null;
+  let touchSourceEl = null;
+  let touchSourceId = null;
+  let touchTargetId = null;
+
+  const clearDragOver = () => {
+    containerEl.querySelectorAll(itemSelector).forEach((el) => el.classList.remove("drag-over"));
+  };
+
+  containerEl.addEventListener("dragstart", (e) => {
+    const itemEl = e.target.closest(itemSelector);
+    if (!itemEl || !itemEl.draggable || !containerEl.contains(itemEl)) return;
+    draggedId = itemEl.dataset[datasetKey] || null;
+    if (!draggedId) return;
+    itemEl.classList.add("dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", draggedId);
+    }
+  });
+
+  containerEl.addEventListener("dragover", (e) => {
+    if (!draggedId) return;
+    const itemEl = e.target.closest(itemSelector);
+    if (!itemEl || !containerEl.contains(itemEl)) return;
+    const targetId = itemEl.dataset[datasetKey];
+    if (!targetId || targetId === draggedId) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    clearDragOver();
+    itemEl.classList.add("drag-over");
+  });
+
+  containerEl.addEventListener("dragleave", (e) => {
+    const itemEl = e.target.closest(itemSelector);
+    if (itemEl && !itemEl.contains(e.relatedTarget)) {
+      itemEl.classList.remove("drag-over");
+    }
+  });
+
+  containerEl.addEventListener("drop", (e) => {
+    const itemEl = e.target.closest(itemSelector);
+    if (!itemEl || !containerEl.contains(itemEl)) return;
+    e.preventDefault();
+    clearDragOver();
+    const targetId = itemEl.dataset[datasetKey];
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    const fromId = draggedId;
+    draggedId = null;
+    onReorder(fromId, targetId);
+  });
+
+  containerEl.addEventListener("dragend", (e) => {
+    draggedId = null;
+    const itemEl = e.target.closest(itemSelector);
+    if (itemEl) itemEl.classList.remove("dragging");
+    clearDragOver();
+  });
+
+  containerEl.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.touches.length !== 1) return;
+      const grip = e.target.closest(".drag-grip");
+      if (!grip) return;
+      const itemEl = grip.closest(itemSelector);
+      if (!itemEl || !containerEl.contains(itemEl)) return;
+      touchSourceEl = itemEl;
+      touchSourceId = itemEl.dataset[datasetKey] || null;
+      touchTargetId = null;
+      itemEl.classList.add("dragging");
+    },
+    { passive: true }
+  );
+
+  containerEl.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!touchSourceId || e.touches.length !== 1) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      const hitEl = document.elementFromPoint(touch.clientX, touch.clientY);
+      const overItem = hitEl ? hitEl.closest(itemSelector) : null;
+      clearDragOver();
+      if (overItem && containerEl.contains(overItem)) {
+        const candidateId = overItem.dataset[datasetKey];
+        if (candidateId && candidateId !== touchSourceId) {
+          overItem.classList.add("drag-over");
+          touchTargetId = candidateId;
+          return;
+        }
+      }
+      touchTargetId = null;
+    },
+    { passive: false }
+  );
+
+  const finishTouchDrag = () => {
+    if (!touchSourceId) return;
+    const fromId = touchSourceId;
+    const toId = touchTargetId;
+    if (touchSourceEl) touchSourceEl.classList.remove("dragging");
+    touchSourceEl = null;
+    touchSourceId = null;
+    touchTargetId = null;
+    clearDragOver();
+    if (toId && toId !== fromId) {
+      onReorder(fromId, toId);
+    }
+  };
+
+  containerEl.addEventListener("touchend", finishTouchDrag);
+  containerEl.addEventListener("touchcancel", () => {
+    if (touchSourceEl) touchSourceEl.classList.remove("dragging");
+    touchSourceEl = null;
+    touchSourceId = null;
+    touchTargetId = null;
+    clearDragOver();
+  });
+}
+
 // Render Color Swatches for List Modal
 function renderListModalColorPicker() {
   const container = document.getElementById("modal-list-colors");
@@ -1566,14 +1716,7 @@ function renderActivityPool() {
   listEl.innerHTML = "";
 
   const editActivitiesBtn = document.getElementById("btn-edit-activities");
-  const editActivitiesLabel = document.getElementById("btn-edit-activities-label");
-  if (editActivitiesBtn) {
-    editActivitiesBtn.classList.toggle("is-active", isEditingActivities);
-    editActivitiesBtn.setAttribute("aria-pressed", isEditingActivities ? "true" : "false");
-  }
-  if (editActivitiesLabel) {
-    editActivitiesLabel.textContent = isEditingActivities ? "Done" : "Edit";
-  }
+  syncEditModeButton("btn-edit-activities", "btn-edit-activities-label", isEditingActivities);
 
   const listManageActions = document.getElementById("list-manage-actions");
   if (listManageActions) {
@@ -1593,6 +1736,8 @@ function renderActivityPool() {
   const completedTodayIds = new Set(
     state.logs.filter((l) => l.date === todayStr).map((l) => l.itemId)
   );
+
+  const frag = document.createDocumentFragment();
 
   activeList.items.forEach((item) => {
     const li = document.createElement("li");
@@ -1658,129 +1803,10 @@ function renderActivityPool() {
       </div>
     `;
 
-    // Drag and Drop events for Task Reordering
-    li.addEventListener("dragstart", (e) => {
-      draggedItemId = item.id;
-      li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", item.id);
-    });
-
-    li.addEventListener("dragover", (e) => {
-      if (!draggedItemId || draggedItemId === item.id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      li.classList.add("drag-over");
-    });
-
-    li.addEventListener("dragleave", () => {
-      li.classList.remove("drag-over");
-    });
-
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      li.classList.remove("drag-over");
-      if (!draggedItemId || draggedItemId === item.id) return;
-
-      const fromIdx = activeList.items.findIndex((i) => i.id === draggedItemId);
-      const toIdx = activeList.items.findIndex((i) => i.id === item.id);
-      if (fromIdx === -1 || toIdx === -1) return;
-
-      const [moved] = activeList.items.splice(fromIdx, 1);
-      activeList.items.splice(toIdx, 0, moved);
-      draggedItemId = null;
-      saveState();
-      renderAll();
-    });
-
-    li.addEventListener("dragend", () => {
-      draggedItemId = null;
-      li.classList.remove("dragging");
-      listEl.querySelectorAll(".activity-item").forEach((el) => el.classList.remove("drag-over"));
-    });
-
-    bindTouchReorder({
-      gripEl: li.querySelector(".drag-grip"),
-      itemEl: li,
-      containerEl: listEl,
-      itemSelector: ".activity-item",
-      datasetKey: "itemId",
-      sourceId: item.id,
-      onReorder: (fromId, toId) => {
-        const fromIdx = activeList.items.findIndex((i) => i.id === fromId);
-        const toIdx = activeList.items.findIndex((i) => i.id === toId);
-        if (fromIdx === -1 || toIdx === -1) return;
-        const [moved] = activeList.items.splice(fromIdx, 1);
-        activeList.items.splice(toIdx, 0, moved);
-        saveState();
-        renderAll();
-      }
-    });
-
-    // Checkbox toggle
-    const checkbox = li.querySelector(".activity-checkbox");
-    const titleSpan = li.querySelector(".activity-title");
-    const toggleCheck = () => {
-      item.checked = !item.checked;
-      saveState();
-      renderAll();
-    };
-    checkbox.addEventListener("change", toggleCheck);
-    titleSpan.addEventListener("click", toggleCheck);
-
-    // Cycle weight (1x -> 2x -> 4x -> 1x)
-    li.querySelector(".weight-badge").addEventListener("click", () => {
-      const currentIdx = WEIGHT_STEPS.indexOf(weight);
-      item.weight = WEIGHT_STEPS[(currentIdx + 1) % WEIGHT_STEPS.length];
-      saveState();
-      renderAll();
-    });
-
-    // Direct log to today (also unchecks it for today)
-    const logDirectBtn = li.querySelector(".log-direct-btn");
-    logDirectBtn.addEventListener("click", () => {
-      logActivityCompletion(item, activeList, getLogicalTodayStr(), logDirectBtn);
-    });
-
-    // Edit activity title with Pop-up Modal
-    li.querySelector(".edit-item-btn").addEventListener("click", () => {
-      openInputModal({
-        title: "Rename Activity",
-        label: "Activity Name",
-        initialValue: item.title,
-        placeholder: "Enter activity name...",
-        onSave: (newTitle) => {
-          item.title = newTitle;
-          if (state.activeDecision && state.activeDecision.itemId === item.id) {
-            state.activeDecision.title = newTitle;
-          }
-          saveState();
-          renderAll();
-          showToast(`Renamed activity to "${newTitle}"`);
-        }
-      });
-    });
-
-    // Delete item with Confirmation Pop-up
-    li.querySelector(".delete-item-btn").addEventListener("click", () => {
-      openConfirmModal(
-        "Delete Activity",
-        `Are you sure you want to delete "${item.title}" from "${activeList.name}"?`,
-        () => {
-          recordDeletedIds(item.id);
-          activeList.items = activeList.items.filter((i) => i.id !== item.id);
-          if (state.activeDecision && state.activeDecision.itemId === item.id) {
-            state.activeDecision = null;
-          }
-          saveState();
-          renderAll();
-          showToast(`Deleted "${item.title}"`);
-        }
-      );
-    });
-
-    listEl.appendChild(li);
+    frag.appendChild(li);
   });
+
+  listEl.replaceChildren(frag);
 }
 
 // Render Daily Tasks Card (Right Column)
@@ -1791,15 +1817,7 @@ function renderDailyTasks() {
   listEl.classList.toggle("is-editing", isEditingDailyTasks);
   listEl.innerHTML = "";
 
-  const editDailyBtn = document.getElementById("btn-edit-daily");
-  const editDailyLabel = document.getElementById("btn-edit-daily-label");
-  if (editDailyBtn) {
-    editDailyBtn.classList.toggle("is-active", isEditingDailyTasks);
-    editDailyBtn.setAttribute("aria-pressed", isEditingDailyTasks ? "true" : "false");
-  }
-  if (editDailyLabel) {
-    editDailyLabel.textContent = isEditingDailyTasks ? "Done" : "Edit";
-  }
+  syncEditModeButton("btn-edit-daily", "btn-edit-daily-label", isEditingDailyTasks);
 
   const total = state.dailyTasks.length;
   const doneCount = state.dailyTasks.filter((t) => t.doneToday).length;
@@ -1825,6 +1843,8 @@ function renderDailyTasks() {
     listEl.innerHTML = `<li class="empty-state">Add your daily habits above to start earning ⭐ Star Badges!</li>`;
     return;
   }
+
+  const frag = document.createDocumentFragment();
 
   state.dailyTasks.forEach((task) => {
     const li = document.createElement("li");
@@ -1853,116 +1873,10 @@ function renderDailyTasks() {
       </div>
     `;
 
-    // Toggle doneToday
-    const toggleDone = (e) => {
-      checkAndPerformDailyReset(false);
-      const prevStats = getStatsSnapshot();
-      task.doneToday = !task.doneToday;
-      if (task.doneToday) {
-        spawnConfettiBurst(e && e.currentTarget ? e.currentTarget : li, "#eab308");
-      }
-      evaluateTodayDailyStar(true);
-      saveState();
-      renderAll();
-      animateStatBumps(prevStats);
-      announceFreezeIfEarned(prevStats.availableFreezes);
-    };
-    li.querySelector(".log-daily-btn").addEventListener("click", toggleDone);
-    li.querySelector(".daily-task-title").addEventListener("click", toggleDone);
-
-    // Drag and Drop reordering for Daily Tasks
-    li.addEventListener("dragstart", (e) => {
-      draggedDailyId = task.id;
-      li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", task.id);
-    });
-
-    li.addEventListener("dragover", (e) => {
-      if (!draggedDailyId || draggedDailyId === task.id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      li.classList.add("drag-over");
-    });
-
-    li.addEventListener("dragleave", () => {
-      li.classList.remove("drag-over");
-    });
-
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      li.classList.remove("drag-over");
-      if (!draggedDailyId || draggedDailyId === task.id) return;
-
-      const fromIdx = state.dailyTasks.findIndex((t) => t.id === draggedDailyId);
-      const toIdx = state.dailyTasks.findIndex((t) => t.id === task.id);
-      if (fromIdx === -1 || toIdx === -1) return;
-
-      const [moved] = state.dailyTasks.splice(fromIdx, 1);
-      state.dailyTasks.splice(toIdx, 0, moved);
-      draggedDailyId = null;
-      saveState();
-      renderAll();
-    });
-
-    li.addEventListener("dragend", () => {
-      draggedDailyId = null;
-      li.classList.remove("dragging");
-      listEl.querySelectorAll(".daily-task-item").forEach((el) => el.classList.remove("drag-over"));
-    });
-
-    bindTouchReorder({
-      gripEl: li.querySelector(".drag-grip"),
-      itemEl: li,
-      containerEl: listEl,
-      itemSelector: ".daily-task-item",
-      datasetKey: "dailyId",
-      sourceId: task.id,
-      onReorder: (fromId, toId) => {
-        const fromIdx = state.dailyTasks.findIndex((t) => t.id === fromId);
-        const toIdx = state.dailyTasks.findIndex((t) => t.id === toId);
-        if (fromIdx === -1 || toIdx === -1) return;
-        const [moved] = state.dailyTasks.splice(fromIdx, 1);
-        state.dailyTasks.splice(toIdx, 0, moved);
-        saveState();
-        renderAll();
-      }
-    });
-
-    // Rename daily task with Pop-up Modal
-    li.querySelector(".edit-daily-btn").addEventListener("click", () => {
-      openInputModal({
-        title: "Rename Daily Task",
-        label: "Daily Task Name",
-        initialValue: task.title,
-        placeholder: "Enter daily task name...",
-        onSave: (newTitle) => {
-          task.title = newTitle;
-          saveState();
-          renderAll();
-          showToast(`Renamed daily task to "${newTitle}"`);
-        }
-      });
-    });
-
-    // Delete daily task with Confirmation Pop-up
-    li.querySelector(".delete-daily-btn").addEventListener("click", () => {
-      openConfirmModal(
-        "Delete Daily Task",
-        `Are you sure you want to delete daily task "${task.title}"?`,
-        () => {
-          recordDeletedIds(task.id);
-          state.dailyTasks = state.dailyTasks.filter((t) => t.id !== task.id);
-          evaluateTodayDailyStar(false);
-          saveState();
-          renderAll();
-          showToast(`Deleted daily task "${task.title}"`);
-        }
-      );
-    });
-
-    listEl.appendChild(li);
+    frag.appendChild(li);
   });
+
+  listEl.replaceChildren(frag);
 }
 
 function formatScheduledTaskMeta(task, todayStr) {
@@ -2013,15 +1927,7 @@ function renderScheduledTasks() {
   listEl.classList.toggle("is-editing", isEditingScheduledTasks);
   listEl.innerHTML = "";
 
-  const editBtn = document.getElementById("btn-edit-scheduled");
-  const editLabel = document.getElementById("btn-edit-scheduled-label");
-  if (editBtn) {
-    editBtn.classList.toggle("is-active", isEditingScheduledTasks);
-    editBtn.setAttribute("aria-pressed", isEditingScheduledTasks ? "true" : "false");
-  }
-  if (editLabel) {
-    editLabel.textContent = isEditingScheduledTasks ? "Done" : "Edit";
-  }
+  syncEditModeButton("btn-edit-scheduled", "btn-edit-scheduled-label", isEditingScheduledTasks);
 
   const todayBtn = document.getElementById("btn-sched-view-today");
   const upcomingBtn = document.getElementById("btn-sched-view-upcoming");
@@ -2062,6 +1968,8 @@ function renderScheduledTasks() {
     return;
   }
 
+  const frag = document.createDocumentFragment();
+
   visibleTasks.forEach((task) => {
     const targetDate = getScheduledTaskTargetDate(task, todayStr);
     const isAhead = targetDate > todayStr;
@@ -2070,7 +1978,6 @@ function renderScheduledTasks() {
 
     const targetDateObj = parseLocalDateStr(targetDate);
     const targetDateLabel = `${SHORT_MONTH_NAMES[targetDateObj.getMonth()]} ${targetDateObj.getDate()}`;
-    const doneTitle = isAhead ? `Completed ahead (for ${targetDateLabel})` : "Completed today";
 
     const li = document.createElement("li");
     li.draggable = isEditingScheduledTasks;
@@ -2107,133 +2014,10 @@ function renderScheduledTasks() {
       </div>
     `;
 
-    const toggleDone = (e) => {
-      if (isEditingScheduledTasks) return;
-      checkAndPerformDailyReset(false);
-      const currentToday = getLogicalTodayStr();
-      const activeTargetDate = getScheduledTaskTargetDate(task, currentToday);
-      const activeIsAhead = activeTargetDate > currentToday;
-      const prevStats = getStatsSnapshot();
-      const wasGold = getStarStatusForDate(
-        currentToday,
-        state.logs.some((l) => l.date === currentToday)
-      ).hasGoldStar;
-
-      if (!task.completedDates || typeof task.completedDates !== "object") {
-        task.completedDates = {};
-      }
-      let markedDoneNow = false;
-      if (task.completedDates[activeTargetDate]) {
-        delete task.completedDates[activeTargetDate];
-      } else {
-        task.completedDates[activeTargetDate] = true;
-        markedDoneNow = true;
-        spawnConfettiBurst(e && e.currentTarget ? e.currentTarget : li, "#eab308");
-      }
-
-      evaluateTodayDailyStar(false);
-      const nowGold = getStarStatusForDate(
-        currentToday,
-        state.logs.some((l) => l.date === currentToday)
-      ).hasGoldStar;
-
-      saveState();
-      renderAll();
-      animateStatBumps(prevStats);
-
-      if (markedDoneNow && activeIsAhead) {
-        const dObj = parseLocalDateStr(activeTargetDate);
-        const dLabel = `${SHORT_MONTH_NAMES[dObj.getMonth()]} ${dObj.getDate()}`;
-        showToast(`Completed "${task.title}" ahead of schedule (for ${dLabel})!`);
-      } else if (!wasGold && nowGold) {
-        showToast(`Completed "${task.title}"! ⭐ Gold Daily Star earned!`);
-      }
-      announceFreezeIfEarned(prevStats.availableFreezes);
-    };
-
-    li.querySelector(".log-sched-btn").addEventListener("click", toggleDone);
-    li.querySelector(".daily-task-title").addEventListener("click", toggleDone);
-
-    // Drag and Drop reordering
-    li.addEventListener("dragstart", (e) => {
-      draggedScheduledId = task.id;
-      li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", task.id);
-    });
-
-    li.addEventListener("dragover", (e) => {
-      if (!draggedScheduledId || draggedScheduledId === task.id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      li.classList.add("drag-over");
-    });
-
-    li.addEventListener("dragleave", () => {
-      li.classList.remove("drag-over");
-    });
-
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      li.classList.remove("drag-over");
-      if (!draggedScheduledId || draggedScheduledId === task.id) return;
-
-      const fromIdx = state.scheduledTasks.findIndex((t) => t.id === draggedScheduledId);
-      const toIdx = state.scheduledTasks.findIndex((t) => t.id === task.id);
-      if (fromIdx === -1 || toIdx === -1) return;
-
-      const [moved] = state.scheduledTasks.splice(fromIdx, 1);
-      state.scheduledTasks.splice(toIdx, 0, moved);
-      draggedScheduledId = null;
-      saveState();
-      renderAll();
-    });
-
-    li.addEventListener("dragend", () => {
-      draggedScheduledId = null;
-      li.classList.remove("dragging");
-      listEl.querySelectorAll(".scheduled-task-item").forEach((el) => el.classList.remove("drag-over"));
-    });
-
-    bindTouchReorder({
-      gripEl: li.querySelector(".drag-grip"),
-      itemEl: li,
-      containerEl: listEl,
-      itemSelector: ".scheduled-task-item",
-      datasetKey: "schedId",
-      sourceId: task.id,
-      onReorder: (fromId, toId) => {
-        const fromIdx = state.scheduledTasks.findIndex((t) => t.id === fromId);
-        const toIdx = state.scheduledTasks.findIndex((t) => t.id === toId);
-        if (fromIdx === -1 || toIdx === -1) return;
-        const [moved] = state.scheduledTasks.splice(fromIdx, 1);
-        state.scheduledTasks.splice(toIdx, 0, moved);
-        saveState();
-        renderAll();
-      }
-    });
-
-    li.querySelector(".edit-sched-btn").addEventListener("click", () => {
-      openScheduledTaskModal(task);
-    });
-
-    li.querySelector(".delete-sched-btn").addEventListener("click", () => {
-      openConfirmModal(
-        "Delete Scheduled Task",
-        `Are you sure you want to delete "${task.title}"?`,
-        () => {
-          recordDeletedIds(task.id);
-          state.scheduledTasks = state.scheduledTasks.filter((t) => t.id !== task.id);
-          evaluateTodayDailyStar(false);
-          saveState();
-          renderAll();
-          showToast(`Deleted task "${task.title}"`);
-        }
-      );
-    });
-
-    listEl.appendChild(li);
+    frag.appendChild(li);
   });
+
+  listEl.replaceChildren(frag);
 }
 
 function setScheduledModalType(type) {
@@ -2329,15 +2113,7 @@ function renderProcrastinationList() {
   listEl.classList.toggle("is-editing", isEditingProcrastination);
   listEl.innerHTML = "";
 
-  const editBtn = document.getElementById("btn-edit-procrastination");
-  const editLabel = document.getElementById("btn-edit-procrastination-label");
-  if (editBtn) {
-    editBtn.classList.toggle("is-active", isEditingProcrastination);
-    editBtn.setAttribute("aria-pressed", isEditingProcrastination ? "true" : "false");
-  }
-  if (editLabel) {
-    editLabel.textContent = isEditingProcrastination ? "Done" : "Edit";
-  }
+  syncEditModeButton("btn-edit-procrastination", "btn-edit-procrastination-label", isEditingProcrastination);
 
   const tasks = Array.isArray(state.procrastinationTasks) ? state.procrastinationTasks : [];
   const pendingCount = tasks.filter((t) => !t.doneToday).length;
@@ -2347,6 +2123,8 @@ function renderProcrastinationList() {
     listEl.innerHTML = `<li class="empty-state">Add one-time tasks you've been putting off — complete them to celebrate and clear them tomorrow!</li>`;
     return;
   }
+
+  const frag = document.createDocumentFragment();
 
   tasks.forEach((task) => {
     const li = document.createElement("li");
@@ -2373,132 +2151,10 @@ function renderProcrastinationList() {
       </div>
     `;
 
-    const toggleDone = (e) => {
-      if (isEditingProcrastination) return;
-      checkAndPerformDailyReset(false);
-      task.doneToday = !task.doneToday;
-      if (
-        task.doneToday &&
-        state.activeDecision &&
-        state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
-        state.activeDecision.itemId === task.id
-      ) {
-        state.activeDecision = null;
-      }
-      saveState();
-      renderAll();
-      if (task.doneToday) {
-        triggerBigProcrastinationCelebration(e && e.currentTarget ? e.currentTarget : li);
-        showToast(`🎉 Finally tackled "${task.title}"! It'll vanish tomorrow!`);
-      }
-    };
-
-    li.querySelector(".log-procrast-btn").addEventListener("click", toggleDone);
-    li.querySelector(".daily-task-title").addEventListener("click", toggleDone);
-
-    li.addEventListener("dragstart", (e) => {
-      draggedProcrastId = task.id;
-      li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", task.id);
-    });
-
-    li.addEventListener("dragover", (e) => {
-      if (!draggedProcrastId || draggedProcrastId === task.id) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      li.classList.add("drag-over");
-    });
-
-    li.addEventListener("dragleave", () => {
-      li.classList.remove("drag-over");
-    });
-
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      li.classList.remove("drag-over");
-      if (!draggedProcrastId || draggedProcrastId === task.id) return;
-
-      const fromIdx = state.procrastinationTasks.findIndex((t) => t.id === draggedProcrastId);
-      const toIdx = state.procrastinationTasks.findIndex((t) => t.id === task.id);
-      if (fromIdx === -1 || toIdx === -1) return;
-
-      const [moved] = state.procrastinationTasks.splice(fromIdx, 1);
-      state.procrastinationTasks.splice(toIdx, 0, moved);
-      draggedProcrastId = null;
-      saveState();
-      renderAll();
-    });
-
-    li.addEventListener("dragend", () => {
-      draggedProcrastId = null;
-      li.classList.remove("dragging");
-      listEl.querySelectorAll(".procrastination-item").forEach((el) => el.classList.remove("drag-over"));
-    });
-
-    bindTouchReorder({
-      gripEl: li.querySelector(".drag-grip"),
-      itemEl: li,
-      containerEl: listEl,
-      itemSelector: ".procrastination-item",
-      datasetKey: "procrastId",
-      sourceId: task.id,
-      onReorder: (fromId, toId) => {
-        const fromIdx = state.procrastinationTasks.findIndex((t) => t.id === fromId);
-        const toIdx = state.procrastinationTasks.findIndex((t) => t.id === toId);
-        if (fromIdx === -1 || toIdx === -1) return;
-        const [moved] = state.procrastinationTasks.splice(fromIdx, 1);
-        state.procrastinationTasks.splice(toIdx, 0, moved);
-        saveState();
-        renderAll();
-      }
-    });
-
-    li.querySelector(".edit-procrast-btn").addEventListener("click", () => {
-      openInputModal({
-        title: "Rename Procrastination Task",
-        label: "Task Name",
-        initialValue: task.title,
-        placeholder: "Enter task name...",
-        onSave: (newTitle) => {
-          task.title = newTitle;
-          if (
-            state.activeDecision &&
-            state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
-            state.activeDecision.itemId === task.id
-          ) {
-            state.activeDecision.title = newTitle;
-          }
-          saveState();
-          renderAll();
-          showToast(`Renamed task to "${newTitle}"`);
-        }
-      });
-    });
-
-    li.querySelector(".delete-procrast-btn").addEventListener("click", () => {
-      openConfirmModal(
-        "Delete Procrastination Task",
-        `Are you sure you want to delete "${task.title}"?`,
-        () => {
-          recordDeletedIds(task.id);
-          state.procrastinationTasks = state.procrastinationTasks.filter((t) => t.id !== task.id);
-          if (
-            state.activeDecision &&
-            state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
-            state.activeDecision.itemId === task.id
-          ) {
-            state.activeDecision = null;
-          }
-          saveState();
-          renderAll();
-          showToast(`Deleted task "${task.title}"`);
-        }
-      );
-    });
-
-    listEl.appendChild(li);
+    frag.appendChild(li);
   });
+
+  listEl.replaceChildren(frag);
 }
 
 // Weighted Random Pick Engine
@@ -3202,7 +2858,8 @@ function renderCalendar() {
         selectedDateStr = dateStr;
         calYear = cellDate.getFullYear();
         calMonth = cellDate.getMonth();
-        renderAll();
+        renderCalendar();
+        renderDayInspector();
       });
 
       row.addEventListener("dblclick", () => {
@@ -3468,7 +3125,8 @@ function createMonthlyDayCell({
     selectedDateStr = dateStr;
     calYear = cellYear;
     calMonth = cellMonth;
-    renderAll();
+    renderCalendar();
+    renderDayInspector();
   });
 
   cell.addEventListener("dblclick", () => {
@@ -3825,8 +3483,349 @@ function renderAll() {
   renderStatsAndInsights();
 }
 
+function bindDelegatedListContainers() {
+  // 1. Activity Pool List
+  const activityListEl = document.getElementById("activity-list");
+  if (activityListEl) {
+    activityListEl.addEventListener("change", (e) => {
+      if (!e.target.classList.contains("activity-checkbox")) return;
+      const li = e.target.closest(".activity-item");
+      const activeList = getActiveList();
+      const item = li && activeList.items.find((i) => i.id === li.dataset.itemId);
+      if (!item) return;
+      item.checked = !item.checked;
+      saveState();
+      renderListTabs();
+      renderActivityPool();
+      renderDecisionCard();
+    });
+
+    activityListEl.addEventListener("click", (e) => {
+      const li = e.target.closest(".activity-item");
+      if (!li) return;
+      const activeList = getActiveList();
+      const item = activeList.items.find((i) => i.id === li.dataset.itemId);
+      if (!item) return;
+
+      if (e.target.closest(".activity-title")) {
+        item.checked = !item.checked;
+        saveState();
+        renderListTabs();
+        renderActivityPool();
+        renderDecisionCard();
+      } else if (e.target.closest(".weight-badge")) {
+        const currentIdx = WEIGHT_STEPS.indexOf(normalizeWeight(item.weight));
+        item.weight = WEIGHT_STEPS[(currentIdx + 1) % WEIGHT_STEPS.length];
+        saveState();
+        renderActivityPool();
+        renderDecisionCard();
+      } else if (e.target.closest(".log-direct-btn")) {
+        const logBtn = e.target.closest(".log-direct-btn");
+        logActivityCompletion(item, activeList, getLogicalTodayStr(), logBtn);
+      } else if (e.target.closest(".edit-item-btn")) {
+        openInputModal({
+          title: "Rename Activity",
+          label: "Activity Name",
+          initialValue: item.title,
+          placeholder: "Enter activity name...",
+          onSave: (newTitle) => {
+            item.title = newTitle;
+            if (state.activeDecision && state.activeDecision.itemId === item.id) {
+              state.activeDecision.title = newTitle;
+            }
+            saveState();
+            renderActivityPool();
+            renderDecisionCard();
+            showToast(`Renamed activity to "${newTitle}"`);
+          }
+        });
+      } else if (e.target.closest(".delete-item-btn")) {
+        openConfirmModal(
+          "Delete Activity",
+          `Are you sure you want to delete "${item.title}" from "${activeList.name}"?`,
+          () => {
+            recordDeletedIds(item.id);
+            activeList.items = activeList.items.filter((i) => i.id !== item.id);
+            if (state.activeDecision && state.activeDecision.itemId === item.id) {
+              state.activeDecision = null;
+            }
+            saveState();
+            renderListTabs();
+            renderActivityPool();
+            renderDecisionCard();
+            showToast(`Deleted "${item.title}"`);
+          }
+        );
+      }
+    });
+
+    bindListDragReorder({
+      containerEl: activityListEl,
+      itemSelector: ".activity-item",
+      datasetKey: "itemId",
+      onReorder: (fromId, toId) => {
+        const activeList = getActiveList();
+        if (reorderArrayById(activeList.items, fromId, toId)) {
+          saveState();
+          renderActivityPool();
+        }
+      }
+    });
+  }
+
+  // 2. Daily Tasks List
+  const dailyListEl = document.getElementById("daily-tasks-list");
+  if (dailyListEl) {
+    dailyListEl.addEventListener("click", (e) => {
+      const li = e.target.closest(".daily-task-item");
+      if (!li) return;
+      const task = state.dailyTasks.find((t) => t.id === li.dataset.dailyId);
+      if (!task) return;
+
+      if (e.target.closest(".log-daily-btn") || e.target.closest(".daily-task-title")) {
+        checkAndPerformDailyReset(false);
+        const prevStats = getStatsSnapshot();
+        task.doneToday = !task.doneToday;
+        if (task.doneToday) {
+          const targetEl = e.target.closest(".log-daily-btn") || li;
+          spawnConfettiBurst(targetEl, "#eab308");
+        }
+        evaluateTodayDailyStar(true);
+        saveState();
+        renderDailyTasks();
+        renderCalendar();
+        renderDayInspector();
+        renderStatsAndInsights();
+        animateStatBumps(prevStats);
+        announceFreezeIfEarned(prevStats.availableFreezes);
+      } else if (e.target.closest(".edit-daily-btn")) {
+        openInputModal({
+          title: "Rename Daily Task",
+          label: "Daily Task Name",
+          initialValue: task.title,
+          placeholder: "Enter daily task name...",
+          onSave: (newTitle) => {
+            task.title = newTitle;
+            saveState();
+            renderDailyTasks();
+            showToast(`Renamed daily task to "${newTitle}"`);
+          }
+        });
+      } else if (e.target.closest(".delete-daily-btn")) {
+        openConfirmModal(
+          "Delete Daily Task",
+          `Are you sure you want to delete daily task "${task.title}"?`,
+          () => {
+            recordDeletedIds(task.id);
+            state.dailyTasks = state.dailyTasks.filter((t) => t.id !== task.id);
+            evaluateTodayDailyStar(false);
+            saveState();
+            renderDailyTasks();
+            renderCalendar();
+            renderDayInspector();
+            renderStatsAndInsights();
+            showToast(`Deleted daily task "${task.title}"`);
+          }
+        );
+      }
+    });
+
+    bindListDragReorder({
+      containerEl: dailyListEl,
+      itemSelector: ".daily-task-item",
+      datasetKey: "dailyId",
+      onReorder: (fromId, toId) => {
+        if (reorderArrayById(state.dailyTasks, fromId, toId)) {
+          saveState();
+          renderDailyTasks();
+        }
+      }
+    });
+  }
+
+  // 3. Scheduled Tasks List
+  const schedListEl = document.getElementById("scheduled-tasks-list");
+  if (schedListEl) {
+    schedListEl.addEventListener("click", (e) => {
+      const li = e.target.closest(".scheduled-task-item");
+      if (!li) return;
+      const tasks = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+      const task = tasks.find((t) => t.id === li.dataset.schedId);
+      if (!task) return;
+
+      if (e.target.closest(".log-sched-btn") || e.target.closest(".daily-task-title")) {
+        if (isEditingScheduledTasks) return;
+        checkAndPerformDailyReset(false);
+        const currentToday = getLogicalTodayStr();
+        const activeTargetDate = getScheduledTaskTargetDate(task, currentToday);
+        const activeIsAhead = activeTargetDate > currentToday;
+        const prevStats = getStatsSnapshot();
+        const wasGold = getStarStatusForDate(
+          currentToday,
+          state.logs.some((l) => l.date === currentToday)
+        ).hasGoldStar;
+
+        if (!task.completedDates || typeof task.completedDates !== "object") {
+          task.completedDates = {};
+        }
+        let markedDoneNow = false;
+        if (task.completedDates[activeTargetDate]) {
+          delete task.completedDates[activeTargetDate];
+        } else {
+          task.completedDates[activeTargetDate] = true;
+          markedDoneNow = true;
+          const targetEl = e.target.closest(".log-sched-btn") || li;
+          spawnConfettiBurst(targetEl, "#eab308");
+        }
+
+        evaluateTodayDailyStar(false);
+        const nowGold = getStarStatusForDate(
+          currentToday,
+          state.logs.some((l) => l.date === currentToday)
+        ).hasGoldStar;
+
+        saveState();
+        renderScheduledTasks();
+        renderDailyTasks();
+        renderCalendar();
+        renderDayInspector();
+        renderStatsAndInsights();
+        animateStatBumps(prevStats);
+
+        if (markedDoneNow && activeIsAhead) {
+          const dObj = parseLocalDateStr(activeTargetDate);
+          const dLabel = `${SHORT_MONTH_NAMES[dObj.getMonth()]} ${dObj.getDate()}`;
+          showToast(`Completed "${task.title}" ahead of schedule (for ${dLabel})!`);
+        } else if (!wasGold && nowGold) {
+          showToast(`Completed "${task.title}"! ⭐ Gold Daily Star earned!`);
+        }
+        announceFreezeIfEarned(prevStats.availableFreezes);
+      } else if (e.target.closest(".edit-sched-btn")) {
+        openScheduledTaskModal(task);
+      } else if (e.target.closest(".delete-sched-btn")) {
+        openConfirmModal(
+          "Delete Scheduled Task",
+          `Are you sure you want to delete "${task.title}"?`,
+          () => {
+            recordDeletedIds(task.id);
+            state.scheduledTasks = state.scheduledTasks.filter((t) => t.id !== task.id);
+            evaluateTodayDailyStar(false);
+            saveState();
+            renderScheduledTasks();
+            renderDailyTasks();
+            renderCalendar();
+            renderDayInspector();
+            renderStatsAndInsights();
+            showToast(`Deleted task "${task.title}"`);
+          }
+        );
+      }
+    });
+
+    bindListDragReorder({
+      containerEl: schedListEl,
+      itemSelector: ".scheduled-task-item",
+      datasetKey: "schedId",
+      onReorder: (fromId, toId) => {
+        if (reorderArrayById(state.scheduledTasks, fromId, toId)) {
+          saveState();
+          renderScheduledTasks();
+        }
+      }
+    });
+  }
+
+  // 4. Procrastination List
+  const procrastListEl = document.getElementById("procrastination-list");
+  if (procrastListEl) {
+    procrastListEl.addEventListener("click", (e) => {
+      const li = e.target.closest(".procrastination-item");
+      if (!li) return;
+      const tasks = Array.isArray(state.procrastinationTasks) ? state.procrastinationTasks : [];
+      const task = tasks.find((t) => t.id === li.dataset.procrastId);
+      if (!task) return;
+
+      if (e.target.closest(".log-procrast-btn") || e.target.closest(".daily-task-title")) {
+        if (isEditingProcrastination) return;
+        checkAndPerformDailyReset(false);
+        task.doneToday = !task.doneToday;
+        if (
+          task.doneToday &&
+          state.activeDecision &&
+          state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+          state.activeDecision.itemId === task.id
+        ) {
+          state.activeDecision = null;
+        }
+        saveState();
+        renderProcrastinationList();
+        renderDecisionCard();
+        if (task.doneToday) {
+          const targetEl = e.target.closest(".log-procrast-btn") || li;
+          triggerBigProcrastinationCelebration(targetEl);
+          showToast(`🎉 Finally tackled "${task.title}"! It'll vanish tomorrow!`);
+        }
+      } else if (e.target.closest(".edit-procrast-btn")) {
+        openInputModal({
+          title: "Rename Procrastination Task",
+          label: "Task Name",
+          initialValue: task.title,
+          placeholder: "Enter task name...",
+          onSave: (newTitle) => {
+            task.title = newTitle;
+            if (
+              state.activeDecision &&
+              state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+              state.activeDecision.itemId === task.id
+            ) {
+              state.activeDecision.title = newTitle;
+            }
+            saveState();
+            renderProcrastinationList();
+            renderDecisionCard();
+            showToast(`Renamed task to "${newTitle}"`);
+          }
+        });
+      } else if (e.target.closest(".delete-procrast-btn")) {
+        openConfirmModal(
+          "Delete Procrastination Task",
+          `Are you sure you want to delete "${task.title}"?`,
+          () => {
+            recordDeletedIds(task.id);
+            state.procrastinationTasks = state.procrastinationTasks.filter((t) => t.id !== task.id);
+            if (
+              state.activeDecision &&
+              state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+              state.activeDecision.itemId === task.id
+            ) {
+              state.activeDecision = null;
+            }
+            saveState();
+            renderProcrastinationList();
+            renderDecisionCard();
+            showToast(`Deleted task "${task.title}"`);
+          }
+        );
+      }
+    });
+
+    bindListDragReorder({
+      containerEl: procrastListEl,
+      itemSelector: ".procrastination-item",
+      datasetKey: "procrastId",
+      onReorder: (fromId, toId) => {
+        if (reorderArrayById(state.procrastinationTasks, fromId, toId)) {
+          saveState();
+          renderProcrastinationList();
+        }
+      }
+    });
+  }
+}
+
 // Wire Up Event Listeners
 function initEvents() {
+  bindDelegatedListContainers();
   // Theme & Settings dropdowns
   const closeThemeDropdowns = () => {
     document.querySelectorAll(".theme-dropdown").forEach((dd) => dd.classList.add("hidden"));
@@ -4385,7 +4384,11 @@ function initEvents() {
       evaluateTodayDailyStar(false);
       saveState();
       closeScheduledTaskModal();
-      renderAll();
+      renderScheduledTasks();
+      renderDailyTasks();
+      renderCalendar();
+      renderDayInspector();
+      renderStatsAndInsights();
     });
   }
 
@@ -4412,7 +4415,9 @@ function initEvents() {
             weight: normalizeWeight(weight)
           });
           saveState();
-          renderAll();
+          renderListTabs();
+          renderActivityPool();
+          renderDecisionCard();
           showToast(`Added "${title}"`);
         }
       });
@@ -4439,7 +4444,10 @@ function initEvents() {
           });
           evaluateTodayDailyStar(false);
           saveState();
-          renderAll();
+          renderDailyTasks();
+          renderCalendar();
+          renderDayInspector();
+          renderStatsAndInsights();
           showToast(`Added daily task "${title}"`);
         }
       });
@@ -4474,7 +4482,8 @@ function initEvents() {
     if (trimmed) {
       state.dailyNotesByDate[selectedDateStr] = trimmed;
       saveState();
-      renderAll();
+      renderCalendar();
+      renderDayInspector();
       if (showNotification && trimmed !== prev) {
         showToast(`📝 Saved note for ${selectedDateStr}`);
       }
@@ -4502,7 +4511,8 @@ function initEvents() {
       if (state.dailyNotesByDate && state.dailyNotesByDate[selectedDateStr]) {
         delete state.dailyNotesByDate[selectedDateStr];
         saveState();
-        renderAll();
+        renderCalendar();
+        renderDayInspector();
         showToast(`Cleared note for ${selectedDateStr}`);
       }
     });
@@ -4623,13 +4633,15 @@ function initEvents() {
     calYear = selObj.getFullYear();
     calMonth = selObj.getMonth();
     saveState();
-    renderAll();
+    renderCalendar();
+    renderDayInspector();
   });
 
   document.getElementById("btn-view-week").addEventListener("click", () => {
     state.calendarView = "week";
     saveState();
-    renderAll();
+    renderCalendar();
+    renderDayInspector();
   });
 
   // Calendar Navigation
@@ -4647,7 +4659,8 @@ function initEvents() {
         calYear--;
       }
     }
-    renderAll();
+    renderCalendar();
+    renderDayInspector();
   });
 
   document.getElementById("btn-cal-next").addEventListener("click", () => {
@@ -4664,7 +4677,8 @@ function initEvents() {
         calYear++;
       }
     }
-    renderAll();
+    renderCalendar();
+    renderDayInspector();
   });
 
   document.getElementById("btn-cal-today").addEventListener("click", () => {
@@ -4672,7 +4686,8 @@ function initEvents() {
     calYear = logicalToday.getFullYear();
     calMonth = logicalToday.getMonth();
     selectedDateStr = getLogicalTodayStr();
-    renderAll();
+    renderCalendar();
+    renderDayInspector();
   });
 
   // Delete Local Data & Reset to Defaults

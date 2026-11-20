@@ -161,12 +161,6 @@
   line-height: 1.4;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  [data-theme="astrology"] body::after {
-    animation: none;
-  }
-}
-
 [data-theme="tarot"] {
   --bg-page: #12090d;
   --bg-card: #1c0f15;
@@ -315,13 +309,6 @@
   background: rgba(212, 162, 76, 0.12);
   border-color: rgba(212, 162, 76, 0.35);
   color: var(--star-gold);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-theme="tarot"] body::after,
-  [data-theme="tarot"] .decision-card.has-active-choice #decision-active {
-    animation: none;
-  }
 }
 
 * {
@@ -4110,6 +4097,12 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  [data-theme="astrology"] body::after,
+  [data-theme="tarot"] body::after,
+  [data-theme="tarot"] .decision-card.has-active-choice #decision-active {
+    animation: none;
+  }
+
   .decision-card.winner-aura-pulse,
   .decision-card.winner-aura-pulse::after,
   .decision-card.winner-aura-pulse .badge-chosen,
