@@ -7,10 +7,7 @@ import {
   GoogleAuthProvider,
   EmailAuthProvider,
   onAuthStateChanged,
-  signInAnonymously,
   signInWithPopup,
-  linkWithPopup,
-  linkWithCredential,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   reauthenticateWithPopup,
@@ -24,12 +21,16 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   doc,
-  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import {
+  getAnalytics,
+  isSupported as isAnalyticsSupported,
+  logEvent
+} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-analytics.js";
 
 const firebaseConfig = {
   projectId: "decideforme-55674",
@@ -45,6 +46,15 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
+
+let analytics = null;
+isAnalyticsSupported()
+  .then((supported) => {
+    if (supported) {
+      analytics = getAnalytics(app);
+    }
+  })
+  .catch(() => {});
 
 let db;
 try {
@@ -69,6 +79,18 @@ let isExplicitSignOut = false;
 function notifyToast(msg) {
   if (window.DecideForMeApp && typeof window.DecideForMeApp.showToast === "function") {
     window.DecideForMeApp.showToast(msg);
+  }
+}
+
+function trackEvent(eventName, params = {}) {
+  if (!analytics) return;
+  try {
+    logEvent(analytics, eventName, {
+      account_type: getAccountType(currentUser),
+      ...params
+    });
+  } catch {
+    // Ignore analytics errors
   }
 }
 
@@ -131,10 +153,10 @@ function updateAccountUI(user) {
     if (btn) btn.classList.toggle("hidden", !isSignedInAccount);
   });
 
-  if (!user) {
-    if (labelEl) labelEl.textContent = "Sign in";
-    if (titleEl) titleEl.textContent = "Not signed in";
-    if (subtitleEl) subtitleEl.textContent = "Local-only mode";
+  if (!user || accountType === "guest") {
+    if (labelEl) labelEl.textContent = "Guest";
+    if (titleEl) titleEl.textContent = "Guest Mode";
+    if (subtitleEl) subtitleEl.textContent = "Sign in to sync across devices";
     if (googleBtn) googleBtn.classList.remove("hidden");
     if (usernameBtn) usernameBtn.classList.remove("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
@@ -142,14 +164,7 @@ function updateAccountUI(user) {
     return;
   }
 
-  if (accountType === "guest") {
-    if (labelEl) labelEl.textContent = "Guest";
-    if (titleEl) titleEl.textContent = "Guest Mode";
-    if (subtitleEl) subtitleEl.textContent = "Sign in to sync across devices";
-    if (googleBtn) googleBtn.classList.remove("hidden");
-    if (usernameBtn) usernameBtn.classList.remove("hidden");
-    if (signOutBtn) signOutBtn.classList.add("hidden");
-  } else if (accountType === "username") {
+  if (accountType === "username") {
     const username = (user.email || "user").split("@")[0];
     if (labelEl) labelEl.textContent = username;
     if (titleEl) titleEl.textContent = username;
@@ -355,11 +370,8 @@ function mergeLocalAndCloudState(localState, cloudState, preferLocal = false) {
 }
 
 async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false) {
+  if (!user || user.isAnonymous) return;
   const sanitized = sanitizeForFirestore(stateObj);
-  if (getAccountType(user) === "guest" && isUntouchedDefaultState(sanitized)) {
-    setSyncStatus("synced", "Guest (local)");
-    return;
-  }
   const json = JSON.stringify(sanitized);
   if (json === lastSyncedJson && !forceMetadataUpdate) {
     setSyncStatus("synced");
@@ -384,12 +396,8 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
 }
 
 function scheduleSave(stateObj) {
-  if (!currentUser) return;
+  if (!currentUser || currentUser.isAnonymous) return;
   const sanitized = sanitizeForFirestore(stateObj);
-  if (getAccountType(currentUser) === "guest" && isUntouchedDefaultState(sanitized) && !lastSyncedJson) {
-    setSyncStatus("synced", "Guest (local)");
-    return;
-  }
   pendingState = sanitized;
   setSyncStatus("syncing");
   if (saveTimer) clearTimeout(saveTimer);
@@ -407,13 +415,13 @@ function flushSave() {
   if (activeFlushPromise) {
     return activeFlushPromise;
   }
-  if (!currentUser || !pendingState) {
+  if (!currentUser || currentUser.isAnonymous || !pendingState) {
     return Promise.resolve();
   }
 
   activeFlushPromise = (async () => {
     try {
-      while (currentUser && pendingState) {
+      while (currentUser && !currentUser.isAnonymous && pendingState) {
         if (saveTimer) {
           clearTimeout(saveTimer);
           saveTimer = null;
@@ -439,67 +447,88 @@ async function attachUserSync(user) {
     unsubscribeDoc = null;
   }
 
+  if (!user || user.isAnonymous) {
+    setSyncStatus("offline", "Local only");
+    return;
+  }
+
   const userRef = doc(db, "users", user.uid);
   const preSignInState = pendingPreSignInLocalState;
   pendingPreSignInLocalState = null;
 
-  try {
-    setSyncStatus("syncing");
-    const snap = await getDoc(userRef);
-    const hasPendingLocal = Boolean(saveTimer || pendingState || activeFlushPromise);
-    const localLatest = preSignInState || window.DecideForMeApp?.getState();
-
-    if (!snap.exists()) {
-      if (localLatest) {
-        if (saveTimer) {
-          clearTimeout(saveTimer);
-          saveTimer = null;
-        }
-        pendingState = null;
-        await writeStateToFirestore(user, localLatest, true);
-      }
-    } else {
-      const cloudData = snap.data();
-      const cloudState = cloudData?.state;
-      const needsMetadataUpdate =
-        cloudData?.accountType !== getAccountType(user);
-
-      if (cloudState) {
-        const merged = mergeLocalAndCloudState(localLatest, cloudState, hasPendingLocal);
-        const mergedJson = JSON.stringify(sanitizeForFirestore(merged));
-        const cloudJson = JSON.stringify(sanitizeForFirestore(cloudState));
-        const localJson = localLatest ? JSON.stringify(sanitizeForFirestore(localLatest)) : "";
-
-        lastSyncedJson = cloudJson;
-        if (mergedJson !== localJson) {
-          window.DecideForMeApp?.applyCloudState(merged);
-        }
-
-        if (mergedJson !== cloudJson || needsMetadataUpdate) {
-          if (saveTimer) {
-            clearTimeout(saveTimer);
-            saveTimer = null;
-          }
-          pendingState = null;
-          await writeStateToFirestore(user, merged, needsMetadataUpdate);
-          if (mergedJson !== cloudJson && !hasPendingLocal) {
-            notifyToast("Local data merged with your cloud account!");
-          }
-        } else {
-          setSyncStatus("synced");
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("Initial Firestore sync error:", err);
-    setSyncStatus("error");
-  }
+  setSyncStatus("syncing");
+  let hasHandledInitialSnapshot = false;
+  let isProcessingInitialSnapshot = false;
 
   unsubscribeDoc = onSnapshot(
     userRef,
-    (snapshot) => {
-      if (!snapshot.exists() || snapshot.metadata.hasPendingWrites) return;
+    async (snapshot) => {
+      if (snapshot.metadata.hasPendingWrites) return;
+
+      if (!hasHandledInitialSnapshot) {
+        if (isProcessingInitialSnapshot) return;
+        isProcessingInitialSnapshot = true;
+        hasHandledInitialSnapshot = true;
+        try {
+          const hasPendingLocal = Boolean(saveTimer || pendingState || activeFlushPromise);
+          const localLatest = preSignInState || window.DecideForMeApp?.getState();
+
+          if (!snapshot.exists()) {
+            if (localLatest) {
+              if (saveTimer) {
+                clearTimeout(saveTimer);
+                saveTimer = null;
+              }
+              pendingState = null;
+              await writeStateToFirestore(user, localLatest, true);
+            } else {
+              setSyncStatus("synced");
+            }
+          } else {
+            const cloudData = snapshot.data();
+            const cloudState = cloudData?.state;
+            const needsMetadataUpdate =
+              cloudData?.accountType !== getAccountType(user);
+
+            if (cloudState) {
+              const merged = mergeLocalAndCloudState(localLatest, cloudState, hasPendingLocal);
+              const mergedJson = JSON.stringify(sanitizeForFirestore(merged));
+              const cloudJson = JSON.stringify(sanitizeForFirestore(cloudState));
+              const localJson = localLatest ? JSON.stringify(sanitizeForFirestore(localLatest)) : "";
+
+              lastSyncedJson = cloudJson;
+              if (mergedJson !== localJson) {
+                window.DecideForMeApp?.applyCloudState(merged);
+              }
+
+              if (mergedJson !== cloudJson || needsMetadataUpdate) {
+                if (saveTimer) {
+                  clearTimeout(saveTimer);
+                  saveTimer = null;
+                }
+                pendingState = null;
+                await writeStateToFirestore(user, merged, needsMetadataUpdate);
+                if (mergedJson !== cloudJson && !hasPendingLocal) {
+                  notifyToast("Local data merged with your cloud account!");
+                }
+              } else {
+                setSyncStatus("synced");
+              }
+            } else {
+              setSyncStatus("synced");
+            }
+          }
+        } catch (err) {
+          console.warn("Initial Firestore sync error:", err);
+          setSyncStatus("error");
+        } finally {
+          isProcessingInitialSnapshot = false;
+        }
+        return;
+      }
+
       if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
+      if (!snapshot.exists()) return;
       const remoteState = snapshot.data()?.state;
       if (!remoteState) return;
       const remoteJson = JSON.stringify(sanitizeForFirestore(remoteState));
@@ -521,24 +550,8 @@ async function signInWithGoogle() {
     const localSnapshot = window.DecideForMeApp?.getState();
     pendingPreSignInLocalState = localSnapshot ? sanitizeForFirestore(localSnapshot) : null;
 
-    if (auth.currentUser && auth.currentUser.isAnonymous) {
-      try {
-        const cred = await linkWithPopup(auth.currentUser, googleProvider);
-        updateAccountUI(cred.user);
-        const currentState = window.DecideForMeApp?.getState();
-        if (currentState) {
-          await writeStateToFirestore(cred.user, currentState, true);
-        }
-        notifyToast("Signed in with Google! Your data is now backed up.");
-        return;
-      } catch (linkErr) {
-        if (linkErr.code !== "auth/credential-already-in-use") {
-          throw linkErr;
-        }
-      }
-    }
-
     await signInWithPopup(auth, googleProvider);
+    trackEvent("login", { method: "google" });
     notifyToast("Signed in with Google!");
   } catch (err) {
     pendingPreSignInLocalState = null;
@@ -569,31 +582,14 @@ async function signInWithUsername(rawUsername, password, isSignUp) {
 
   try {
     if (isSignUp) {
-      if (auth.currentUser && auth.currentUser.isAnonymous) {
-        try {
-          const cred = EmailAuthProvider.credential(internalEmail, password);
-          const result = await linkWithCredential(auth.currentUser, cred);
-          updateAccountUI(result.user);
-          const currentState = window.DecideForMeApp?.getState();
-          if (currentState) {
-            await writeStateToFirestore(result.user, currentState, true);
-          }
-          notifyToast(`Account "${username}" created! Your data is now backed up.`);
-          return;
-        } catch (linkErr) {
-          if (linkErr.code === "auth/email-already-in-use" || linkErr.code === "auth/credential-already-in-use") {
-            throw new Error("That username is already taken. Try signing in instead.");
-          }
-          throw linkErr;
-        }
-      }
-
       await createUserWithEmailAndPassword(auth, internalEmail, password);
+      trackEvent("sign_up", { method: "username" });
       notifyToast(`Account "${username}" created!`);
       return;
     }
 
     await signInWithEmailAndPassword(auth, internalEmail, password);
+    trackEvent("login", { method: "username" });
     notifyToast(`Signed in as ${username}!`);
   } catch (err) {
     pendingPreSignInLocalState = null;
@@ -788,17 +784,20 @@ async function deleteAccount() {
 }
 
 onAuthStateChanged(auth, async (user) => {
-  if (!user) {
+  if (!user || user.isAnonymous) {
     currentUser = null;
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    pendingState = null;
     updateAccountUI(null);
     if (unsubscribeDoc) {
       unsubscribeDoc();
       unsubscribeDoc = null;
     }
-    try {
-      await signInAnonymously(auth);
-    } catch (err) {
-      console.warn("Anonymous sign-in failed:", err);
+    if (user && user.isAnonymous) {
+      firebaseSignOut(auth).catch(() => {});
     }
     return;
   }
@@ -821,6 +820,7 @@ window.addEventListener("beforeunload", () => {
 window.DecideForMeCloud = {
   scheduleSave,
   flushSave,
+  trackEvent,
   signInWithGoogle,
   signInWithUsername,
   signOut,

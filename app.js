@@ -340,6 +340,12 @@ function saveState(skipCloud = false) {
   }
 }
 
+function trackAnalyticsEvent(eventName, params = {}) {
+  if (window.DecideForMeCloud && typeof window.DecideForMeCloud.trackEvent === "function") {
+    window.DecideForMeCloud.trackEvent(eventName, params);
+  }
+}
+
 /**
  * Checks if the 3:00 AM daily boundary has passed since lastDailyResetDate.
  * When a new logical day begins, re-checks all activity options across all lists
@@ -2887,6 +2893,10 @@ function triggerDecisionRoll(isReroll = false) {
   if (allCheckedCount === 1) {
     state.activeDecision = decisionPayload;
     saveState();
+    trackAnalyticsEvent("decide_spin", {
+      is_reroll: nextRerollCount > 0,
+      candidate_count: allCheckedCount
+    });
     renderAll();
     triggerWinnerAura(chosenListColor);
     return;
@@ -2918,6 +2928,10 @@ function triggerDecisionRoll(isReroll = false) {
         isRolling = false;
         state.activeDecision = decisionPayload;
         saveState();
+        trackAnalyticsEvent("decide_spin", {
+          is_reroll: nextRerollCount > 0,
+          candidate_count: allCheckedCount
+        });
         renderAll();
         triggerWinnerAura(chosenListColor);
       }, Math.max(rollDelays[stepIndex], 480));
@@ -3010,6 +3024,9 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), origi
     dateStr === todayStr ? getStarStatusForDate(todayStr, true) : null;
 
   saveState();
+  trackAnalyticsEvent("activity_completed", {
+    from_active_decision: isCompletingActiveHero
+  });
   spawnConfettiBurst(originEl, resolvedColor);
   renderAll();
   animateStatBumps(prevStats);
