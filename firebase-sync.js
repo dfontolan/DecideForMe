@@ -9,6 +9,8 @@ import {
   signInAnonymously,
   signInWithPopup,
   linkWithPopup,
+  reauthenticateWithPopup,
+  deleteUser,
   signOut as firebaseSignOut
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import {
@@ -19,6 +21,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
@@ -89,6 +92,15 @@ function updateAccountUI(user) {
   const subtitleEl = document.getElementById("account-user-subtitle");
   const googleBtn = document.getElementById("btn-google-signin");
   const signOutBtn = document.getElementById("btn-google-signout");
+  const deleteAccountBtns = [
+    document.getElementById("btn-delete-account"),
+    document.getElementById("btn-delete-account-footer")
+  ];
+
+  const isGoogleUser = Boolean(user && !user.isAnonymous);
+  deleteAccountBtns.forEach((btn) => {
+    if (btn) btn.classList.toggle("hidden", !isGoogleUser);
+  });
 
   if (!user) {
     if (labelEl) labelEl.textContent = "Sign in";
@@ -176,16 +188,17 @@ function mergeLocalAndCloudState(localState, cloudState) {
   };
 }
 
-async function writeStateToFirestore(uid, stateObj) {
+async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false) {
   const sanitized = sanitizeForFirestore(stateObj);
   const json = JSON.stringify(sanitized);
-  if (json === lastSyncedJson) {
+  if (json === lastSyncedJson && !forceMetadataUpdate) {
     setSyncStatus("synced");
     return;
   }
   setSyncStatus("syncing");
-  await setDoc(doc(db, "users", uid), {
+  await setDoc(doc(db, "users", user.uid), {
     state: sanitized,
+    accountType: user.isAnonymous ? "guest" : "google",
     updatedAt: serverTimestamp()
   });
   lastSyncedJson = json;
@@ -211,7 +224,7 @@ async function flushSave() {
   const toSave = pendingState;
   pendingState = null;
   try {
-    await writeStateToFirestore(currentUser.uid, toSave);
+    await writeStateToFirestore(currentUser, toSave);
   } catch (err) {
     console.warn("Firestore save deferred/failed:", err);
     setSyncStatus("error");
@@ -234,10 +247,14 @@ async function attachUserSync(user) {
 
     if (!snap.exists()) {
       if (localBefore) {
-        await writeStateToFirestore(user.uid, localBefore);
+        await writeStateToFirestore(user, localBefore, true);
       }
     } else {
-      const cloudState = snap.data()?.state;
+      const cloudData = snap.data();
+      const cloudState = cloudData?.state;
+      const needsMetadataUpdate =
+        cloudData?.accountType !== (user.isAnonymous ? "guest" : "google");
+
       if (cloudState) {
         const merged = mergeLocalAndCloudState(localBefore, cloudState);
         const mergedJson = JSON.stringify(sanitizeForFirestore(merged));
@@ -246,9 +263,11 @@ async function attachUserSync(user) {
         lastSyncedJson = cloudJson;
         window.DecideForMeApp?.applyCloudState(merged);
 
-        if (mergedJson !== cloudJson) {
-          await writeStateToFirestore(user.uid, merged);
-          notifyToast("Local data merged with your cloud account!");
+        if (mergedJson !== cloudJson || needsMetadataUpdate) {
+          await writeStateToFirestore(user, merged, needsMetadataUpdate);
+          if (mergedJson !== cloudJson) {
+            notifyToast("Local data merged with your cloud account!");
+          }
         } else {
           setSyncStatus("synced");
         }
@@ -286,7 +305,12 @@ async function signInWithGoogle() {
 
     if (auth.currentUser && auth.currentUser.isAnonymous) {
       try {
-        await linkWithPopup(auth.currentUser, googleProvider);
+        const cred = await linkWithPopup(auth.currentUser, googleProvider);
+        updateAccountUI(cred.user);
+        const currentState = window.DecideForMeApp?.getState();
+        if (currentState) {
+          await writeStateToFirestore(cred.user, currentState, true);
+        }
         notifyToast("Signed in with Google! Your data is now backed up.");
         return;
       } catch (linkErr) {
@@ -331,6 +355,55 @@ async function signOut() {
   }
 }
 
+async function deleteAccount() {
+  const user = auth.currentUser;
+  if (!user || user.isAnonymous) return;
+
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  pendingState = null;
+
+  if (unsubscribeDoc) {
+    unsubscribeDoc();
+    unsubscribeDoc = null;
+  }
+
+  try {
+    try {
+      await deleteDoc(doc(db, "users", user.uid));
+    } catch (docErr) {
+      console.warn("Could not delete Firestore doc before auth deletion:", docErr);
+    }
+
+    try {
+      await deleteUser(user);
+    } catch (authErr) {
+      if (authErr.code === "auth/requires-recent-login") {
+        await reauthenticateWithPopup(user, googleProvider);
+        await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
+        await deleteUser(user);
+      } else {
+        throw authErr;
+      }
+    }
+
+    lastSyncedJson = "";
+    window.DecideForMeApp?.resetToDefaultState();
+    notifyToast("Your account and cloud data have been permanently deleted.");
+  } catch (err) {
+    if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+      notifyToast("Account deletion cancelled.");
+      await attachUserSync(user);
+      return;
+    }
+    console.error("Delete account error:", err);
+    notifyToast("Could not delete account. Please try again.");
+    await attachUserSync(user);
+  }
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
     currentUser = null;
@@ -366,5 +439,6 @@ window.DecideForMeCloud = {
   scheduleSave,
   flushSave,
   signInWithGoogle,
-  signOut
+  signOut,
+  deleteAccount
 };

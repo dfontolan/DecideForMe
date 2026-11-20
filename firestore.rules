@@ -12,6 +12,7 @@ service cloud.firestore {
     // Fields:
     //   - state: map (required, max 50 top-level keys) - serialized DecideForMe app state
     //   - updatedAt: timestamp (required) - last sync timestamp
+    //   - accountType: string (optional, 'guest' | 'google') - authentication provider type
     //
     // ===============================================================
 
@@ -44,11 +45,12 @@ service cloud.firestore {
     // ===============================================================
 
     function isValidUserState(data) {
-      return hasOnlyAllowedFields(['state', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['state', 'updatedAt', 'accountType']) &&
              hasRequiredFields(['state', 'updatedAt']) &&
              data.state is map &&
              data.state.keys().size() <= 50 &&
-             data.updatedAt is timestamp;
+             data.updatedAt is timestamp &&
+             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google']));
     }
 
     // ===============================================================

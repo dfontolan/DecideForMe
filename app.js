@@ -4616,6 +4616,26 @@ function initEvents() {
     footerResetBtn.addEventListener("click", handleResetData);
   }
 
+  // Delete Logged-In Account & Cloud Data
+  const handleDeleteAccount = () => {
+    openConfirmModal(
+      "Delete Account & Cloud Data",
+      "Are you sure you want to permanently delete your account, all cloud-synced data, and local data? This cannot be undone.",
+      () => {
+        window.DecideForMeCloud?.deleteAccount();
+      }
+    );
+  };
+
+  const deleteAccountBtn = document.getElementById("btn-delete-account");
+  if (deleteAccountBtn) {
+    deleteAccountBtn.addEventListener("click", handleDeleteAccount);
+  }
+  const footerDeleteAccountBtn = document.getElementById("btn-delete-account-footer");
+  if (footerDeleteAccountBtn) {
+    footerDeleteAccountBtn.addEventListener("click", handleDeleteAccount);
+  }
+
   // Watch for 3:00 AM daily rollover while tab is open or refocused
   window.addEventListener("focus", () => checkAndPerformDailyReset(true));
   document.addEventListener("visibilitychange", () => {
