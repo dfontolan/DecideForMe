@@ -1857,7 +1857,9 @@ body {
 .scheduled-tasks-list:not(.is-editing) .delete-sched-btn,
 .procrastination-list:not(.is-editing) .drag-grip,
 .procrastination-list:not(.is-editing) .edit-procrast-btn,
-.procrastination-list:not(.is-editing) .delete-procrast-btn {
+.procrastination-list:not(.is-editing) .delete-procrast-btn,
+.procrastination-list:not(.is-editing) .edit-procrast-subtask-btn,
+.procrastination-list:not(.is-editing) .delete-procrast-subtask-btn {
   display: none;
 }
 
@@ -1865,6 +1867,7 @@ body {
 .daily-tasks-list.is-editing .log-daily-btn,
 .scheduled-tasks-list.is-editing .log-sched-btn,
 .procrastination-list.is-editing .log-procrast-btn,
+.procrastination-list.is-editing .toggle-procrast-subtask-btn,
 .activity-list.is-editing .log-direct-btn {
   display: none;
 }
@@ -2372,14 +2375,21 @@ body {
 
 .procrastination-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   background: var(--bg-card-elevated);
   border: 1px solid var(--border-subtle);
   transition: border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.procrastination-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .procrastination-item:hover {
@@ -2399,6 +2409,92 @@ body {
 .log-procrast-btn.is-done {
   color: var(--success);
   background: var(--success-bg);
+}
+
+.procrast-subtask-progress {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.add-procrast-subtask-btn {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.procrastination-subtasks {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-subtle);
+}
+
+.procrastination-subtask-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.procrastination-subtask-item:hover {
+  background: var(--bg-hover);
+}
+
+.procrastination-subtask-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+}
+
+.procrastination-subtask-title {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.procrastination-subtask-item.done {
+  opacity: 0.62;
+}
+
+.procrastination-subtask-item.done .procrastination-subtask-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.toggle-procrast-subtask-btn {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  font-size: 0.75rem;
+}
+
+.toggle-procrast-subtask-btn.is-done {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.procrastination-subtask-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 /* ==========================================

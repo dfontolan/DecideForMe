@@ -654,6 +654,28 @@ function getHeroSelectedIds() {
   return [getActiveList().id];
 }
 
+function getNextProcrastinationTarget(task) {
+  const subtasks = Array.isArray(task && task.subtasks) ? task.subtasks : [];
+  const firstIncompleteIndex = subtasks.findIndex((s) => !s.done);
+  if (firstIncompleteIndex !== -1) {
+    const firstIncomplete = subtasks[firstIncompleteIndex];
+    return {
+      title: firstIncomplete.title,
+      subtaskId: firstIncomplete.id,
+      parentTitle: task.title,
+      subtaskIndex: firstIncompleteIndex + 1,
+      subtaskTotal: subtasks.length
+    };
+  }
+  return {
+    title: task.title,
+    subtaskId: null,
+    parentTitle: null,
+    subtaskIndex: 0,
+    subtaskTotal: 0
+  };
+}
+
 function getActiveHeroPool() {
   const selectedIds = getHeroSelectedIds();
   if (selectedIds[0] === PROCRASTINATION_LIST_ID) {
@@ -667,15 +689,22 @@ function getActiveHeroPool() {
       selectedIds,
       items: tasks
         .filter((t) => !t.doneToday)
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          checked: true,
-          weight: 1,
-          listId: PROCRASTINATION_LIST_ID,
-          listName: "Procrastination List",
-          listColor: PROCRASTINATION_LIST_COLOR
-        }))
+        .map((t) => {
+          const target = getNextProcrastinationTarget(t);
+          return {
+            id: t.id,
+            title: target.title,
+            subtaskId: target.subtaskId,
+            parentTitle: target.parentTitle,
+            subtaskIndex: target.subtaskIndex,
+            subtaskTotal: target.subtaskTotal,
+            checked: true,
+            weight: 1,
+            listId: PROCRASTINATION_LIST_ID,
+            listName: "Procrastination List",
+            listColor: PROCRASTINATION_LIST_COLOR
+          };
+        })
     };
   }
 
@@ -1689,7 +1718,9 @@ function renderDecisionCard() {
     document.getElementById("chosen-color-dot").style.backgroundColor = chosenColor;
     activeEl.style.setProperty("--chosen-color", chosenColor);
     document.getElementById("chosen-title").textContent = d.title;
-    document.getElementById("chosen-list-subtitle").textContent = `From list: ${d.listName}`;
+    document.getElementById("chosen-list-subtitle").textContent = d.parentTitle
+      ? `From: ${d.parentTitle} (Step ${d.subtaskIndex}/${d.subtaskTotal}) • ${d.listName}`
+      : `From list: ${d.listName}`;
     const quipEl = document.getElementById("chosen-theme-quip");
     if (quipEl) {
       const quipText = getThemeQuip(d);
@@ -2261,25 +2292,69 @@ function renderProcrastinationList() {
     const li = document.createElement("li");
     li.draggable = isEditingProcrastination;
     li.dataset.procrastId = task.id;
-    li.className = `procrastination-item ${task.doneToday ? "done" : ""}`;
+    const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+    const doneSubCount = subtasks.filter((s) => s.done).length;
+    li.className = `procrastination-item ${task.doneToday ? "done" : ""} ${subtasks.length > 0 ? "has-subtasks" : ""}`;
+
+    const subtaskProgressHtml =
+      subtasks.length > 0
+        ? `<span class="procrast-subtask-progress" title="${doneSubCount} of ${subtasks.length} subtasks done">${doneSubCount}/${subtasks.length}</span>`
+        : "";
+
+    const subtasksHtml =
+      subtasks.length > 0
+        ? `<ul class="procrastination-subtasks">
+            ${subtasks
+              .map(
+                (sub) => `
+              <li class="procrastination-subtask-item ${sub.done ? "done" : ""}" data-subtask-id="${escapeHtml(sub.id)}">
+                <div class="procrastination-subtask-left">
+                  <button
+                    type="button"
+                    class="btn-icon toggle-procrast-subtask-btn ${sub.done ? "is-done" : ""}"
+                    title="${sub.done ? `Unmark '${escapeHtml(sub.title)}'` : `Complete '${escapeHtml(sub.title)}'`}"
+                    aria-pressed="${sub.done ? "true" : "false"}"
+                  >✓</button>
+                  <span class="procrastination-subtask-title" title="Click to toggle">${escapeHtml(sub.title)}</span>
+                </div>
+                <div class="procrastination-subtask-actions">
+                  <button type="button" class="btn-icon edit-procrast-subtask-btn" title="Rename subtask">${ICON_EDIT_SVG}</button>
+                  <button type="button" class="btn-icon danger delete-procrast-subtask-btn" title="Delete subtask">${ICON_TRASH_SVG}</button>
+                </div>
+              </li>
+            `
+              )
+              .join("")}
+          </ul>`
+        : "";
 
     li.innerHTML = `
-      <div class="daily-task-left">
-        <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
-        <div class="activity-title-group">
-          <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
+      <div class="procrastination-main-row">
+        <div class="daily-task-left">
+          <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
+          <div class="activity-title-group">
+            <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
+            ${subtaskProgressHtml}
+          </div>
+        </div>
+        <div class="daily-task-actions">
+          <button
+            type="button"
+            class="btn-icon add-procrast-subtask-btn"
+            title="Add subtask"
+            aria-label="Add subtask to ${escapeHtml(task.title)}"
+          >+</button>
+          <button
+            type="button"
+            class="btn-icon log-procrast-btn ${task.doneToday ? "is-done" : ""}"
+            title="${task.doneToday ? `Unmark '${escapeHtml(task.title)}'` : `Complete '${escapeHtml(task.title)}'`}"
+            aria-pressed="${task.doneToday ? "true" : "false"}"
+          >✓</button>
+          <button type="button" class="btn-icon edit-procrast-btn" title="Rename task">${ICON_EDIT_SVG}</button>
+          <button type="button" class="btn-icon danger delete-procrast-btn" title="Delete task">${ICON_TRASH_SVG}</button>
         </div>
       </div>
-      <div class="daily-task-actions">
-        <button
-          type="button"
-          class="btn-icon log-procrast-btn ${task.doneToday ? "is-done" : ""}"
-          title="${task.doneToday ? `Unmark '${escapeHtml(task.title)}'` : `Complete '${escapeHtml(task.title)}'`}"
-          aria-pressed="${task.doneToday ? "true" : "false"}"
-        >✓</button>
-        <button type="button" class="btn-icon edit-procrast-btn" title="Rename task">${ICON_EDIT_SVG}</button>
-        <button type="button" class="btn-icon danger delete-procrast-btn" title="Delete task">${ICON_TRASH_SVG}</button>
-      </div>
+      ${subtasksHtml}
     `;
 
     frag.appendChild(li);
@@ -2789,16 +2864,25 @@ function triggerDecisionRoll(isReroll = false) {
   let chosenListColor;
 
   if (hitHiddenProcrastination) {
-    chosen =
+    const rawProcrastTask =
       availableProcrastinationTasks[
         Math.floor(Math.random() * availableProcrastinationTasks.length)
       ];
+    const target = getNextProcrastinationTarget(rawProcrastTask);
+    chosen = {
+      id: rawProcrastTask.id,
+      title: target.title
+    };
     chosenListColor = PROCRASTINATION_LIST_COLOR;
     decisionPayload = {
-      itemId: chosen.id,
+      itemId: rawProcrastTask.id,
+      subtaskId: target.subtaskId,
+      parentTitle: target.parentTitle,
+      subtaskIndex: target.subtaskIndex,
+      subtaskTotal: target.subtaskTotal,
       listId: PROCRASTINATION_LIST_ID,
       listName: "Procrastination List",
-      title: chosen.title,
+      title: target.title,
       color: chosenListColor,
       weight: 1,
       probabilityPct: 1,
@@ -2816,6 +2900,10 @@ function triggerDecisionRoll(isReroll = false) {
     chosenListColor = chosen.listColor || activeList.color || PALETTE[0];
     decisionPayload = {
       itemId: chosen.id,
+      subtaskId: chosen.subtaskId || null,
+      parentTitle: chosen.parentTitle || null,
+      subtaskIndex: chosen.subtaskIndex || 0,
+      subtaskTotal: chosen.subtaskTotal || 0,
       listId: chosenListId,
       listName: chosenListName,
       title: chosen.title,
@@ -4050,7 +4138,117 @@ function bindDelegatedListContainers() {
       const task = tasks.find((t) => t.id === li.dataset.procrastId);
       if (!task) return;
 
-      if (e.target.closest(".log-procrast-btn") || e.target.closest(".daily-task-title")) {
+      const subtaskEl = e.target.closest(".procrastination-subtask-item");
+      if (subtaskEl) {
+        if (!Array.isArray(task.subtasks)) task.subtasks = [];
+        const sub = task.subtasks.find((s) => s.id === subtaskEl.dataset.subtaskId);
+        if (!sub) return;
+
+        if (e.target.closest(".toggle-procrast-subtask-btn") || e.target.closest(".procrastination-subtask-title")) {
+          if (isEditingProcrastination) return;
+          checkAndPerformDailyReset(false);
+          sub.done = !sub.done;
+          const allSubtasksDone = task.subtasks.length > 0 && task.subtasks.every((s) => s.done);
+          task.doneToday = allSubtasksDone;
+
+          if (
+            sub.done &&
+            state.activeDecision &&
+            state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+            state.activeDecision.itemId === task.id &&
+            state.activeDecision.subtaskId === sub.id
+          ) {
+            state.activeDecision = null;
+          }
+
+          saveState();
+          if (allSubtasksDone) {
+            trackAnalyticsEvent("procrastination_completed", {
+              from_active_decision: false
+            });
+          }
+          renderProcrastinationList();
+          renderDecisionCard();
+          if (allSubtasksDone) {
+            triggerBigProcrastinationCelebration(e.target.closest(".toggle-procrast-subtask-btn") || subtaskEl);
+            showToast(`🎉 Finally tackled "${task.title}"! It'll vanish tomorrow!`);
+          } else if (sub.done) {
+            spawnConfettiBurst(e.target.closest(".toggle-procrast-subtask-btn") || subtaskEl, PROCRASTINATION_LIST_COLOR);
+            const doneCount = task.subtasks.filter((s) => s.done).length;
+            showToast(`✓ Step done (${doneCount}/${task.subtasks.length}) for "${task.title}"`);
+          }
+          return;
+        } else if (e.target.closest(".edit-procrast-subtask-btn")) {
+          openInputModal({
+            title: "Rename Subtask",
+            label: "Subtask Name",
+            initialValue: sub.title,
+            placeholder: "Enter subtask name...",
+            onSave: (newTitle) => {
+              sub.title = newTitle;
+              if (
+                state.activeDecision &&
+                state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+                state.activeDecision.itemId === task.id &&
+                state.activeDecision.subtaskId === sub.id
+              ) {
+                state.activeDecision.title = newTitle;
+              }
+              saveState();
+              renderProcrastinationList();
+              renderDecisionCard();
+              showToast(`Renamed subtask to "${newTitle}"`);
+            }
+          });
+          return;
+        } else if (e.target.closest(".delete-procrast-subtask-btn")) {
+          openConfirmModal(
+            "Delete Subtask",
+            `Are you sure you want to delete "${sub.title}"?`,
+            () => {
+              task.subtasks = task.subtasks.filter((s) => s.id !== sub.id);
+              if (task.subtasks.length > 0 && task.subtasks.every((s) => s.done)) {
+                task.doneToday = true;
+              }
+              if (
+                state.activeDecision &&
+                state.activeDecision.listId === PROCRASTINATION_LIST_ID &&
+                state.activeDecision.itemId === task.id &&
+                state.activeDecision.subtaskId === sub.id
+              ) {
+                state.activeDecision = null;
+              }
+              saveState();
+              renderProcrastinationList();
+              renderDecisionCard();
+              showToast(`Deleted subtask "${sub.title}"`);
+            }
+          );
+          return;
+        }
+      }
+
+      if (e.target.closest(".add-procrast-subtask-btn")) {
+        openInputModal({
+          title: `Add Subtask to "${task.title}"`,
+          label: "Subtask Name",
+          initialValue: "",
+          placeholder: "e.g., Gather documents...",
+          onSave: (subTitle) => {
+            if (!Array.isArray(task.subtasks)) task.subtasks = [];
+            task.subtasks.push({
+              id: uid("sub"),
+              title: subTitle,
+              done: false
+            });
+            task.doneToday = false;
+            saveState();
+            renderProcrastinationList();
+            renderDecisionCard();
+            showToast(`Added subtask "${subTitle}"`);
+          }
+        });
+      } else if (e.target.closest(".log-procrast-btn") || e.target.closest(".daily-task-title")) {
         if (isEditingProcrastination) return;
         checkAndPerformDailyReset(false);
         task.doneToday = !task.doneToday;
@@ -4419,17 +4617,42 @@ function initEvents() {
     if (d.listId === PROCRASTINATION_LIST_ID) {
       checkAndPerformDailyReset(false);
       const task = (state.procrastinationTasks || []).find((t) => t.id === d.itemId);
+      let completedWholeTask = true;
+      let doneSubCount = 0;
+      let totalSubCount = 0;
+
       if (task) {
-        task.doneToday = true;
+        if (d.subtaskId && Array.isArray(task.subtasks)) {
+          const sub = task.subtasks.find((s) => s.id === d.subtaskId);
+          if (sub) {
+            sub.done = true;
+          }
+          totalSubCount = task.subtasks.length;
+          doneSubCount = task.subtasks.filter((s) => s.done).length;
+          completedWholeTask = totalSubCount === 0 || doneSubCount >= totalSubCount;
+          if (completedWholeTask) {
+            task.doneToday = true;
+          }
+        } else {
+          task.doneToday = true;
+        }
       }
+
       state.activeDecision = null;
       saveState();
-      trackAnalyticsEvent("procrastination_completed", {
-        from_active_decision: true
-      });
-      renderAll();
-      triggerBigProcrastinationCelebration(e.currentTarget);
-      showToast(`🎉 Finally tackled "${d.title}"! It'll vanish tomorrow!`);
+
+      if (completedWholeTask) {
+        trackAnalyticsEvent("procrastination_completed", {
+          from_active_decision: true
+        });
+        renderAll();
+        triggerBigProcrastinationCelebration(e.currentTarget);
+        showToast(`🎉 Finally tackled "${(task && task.title) || d.title}"! It'll vanish tomorrow!`);
+      } else {
+        renderAll();
+        spawnConfettiBurst(e.currentTarget, PROCRASTINATION_LIST_COLOR);
+        showToast(`✓ Completed step "${d.title}"! (${doneSubCount}/${totalSubCount} done)`);
+      }
       return;
     }
     const listColor = getListColor(d.listId, d.color || PALETTE[0]);
