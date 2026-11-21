@@ -2065,6 +2065,7 @@ function openScheduledTaskModal(existingTask = null) {
   const titleInput = document.getElementById("input-scheduled-title");
   const dateInput = document.getElementById("input-scheduled-date");
   const monthdayInput = document.getElementById("input-scheduled-monthday");
+  const addAnotherBtn = document.getElementById("btn-sched-modal-add-another");
   const saveBtn = document.getElementById("btn-sched-modal-save");
   if (!modal) return;
 
@@ -2074,6 +2075,7 @@ function openScheduledTaskModal(existingTask = null) {
 
   editingScheduledTaskId = existingTask ? existingTask.id : null;
   if (titleHeading) titleHeading.textContent = existingTask ? "Edit Scheduled Task" : "Add Scheduled Task";
+  if (addAnotherBtn) addAnotherBtn.classList.toggle("hidden", Boolean(existingTask));
   if (saveBtn) saveBtn.textContent = existingTask ? "Save Changes" : "Add Task";
   if (titleInput) titleInput.value = existingTask ? existingTask.title : "";
 
@@ -4363,87 +4365,110 @@ function initEvents() {
     });
   }
 
+  const saveScheduledTaskFromModal = ({ closeAfter = true } = {}) => {
+    const titleInput = document.getElementById("input-scheduled-title");
+    const title = titleInput ? titleInput.value.trim() : "";
+    if (!title) {
+      if (titleInput) {
+        titleInput.reportValidity();
+        titleInput.focus();
+      }
+      return false;
+    }
+
+    const selectedTypeBtn = document.querySelector("#sched-type-group .weight-pill-btn.is-selected");
+    const type = selectedTypeBtn ? selectedTypeBtn.dataset.schedType : "once";
+    const todayStr = getLogicalTodayStr();
+
+    let dueDate = todayStr;
+    let repeatRule = null;
+
+    if (type === "once") {
+      const dateInput = document.getElementById("input-scheduled-date");
+      dueDate = (dateInput && dateInput.value) || todayStr;
+    } else {
+      const selectedFreqBtn = document.querySelector("#sched-freq-group .weight-pill-btn.is-selected");
+      const freq = selectedFreqBtn ? selectedFreqBtn.dataset.schedFreq : "weekly";
+      if (freq === "monthly") {
+        const monthdayInput = document.getElementById("input-scheduled-monthday");
+        const monthDay = Math.min(31, Math.max(1, Number(monthdayInput && monthdayInput.value) || 1));
+        repeatRule = { freq: "monthly", weekdays: [], monthDay };
+      } else {
+        const weekdays = Array.from(
+          document.querySelectorAll("#sched-weekday-pills .weekday-pill-btn.is-selected")
+        ).map((btn) => Number(btn.dataset.weekday));
+        if (weekdays.length === 0) {
+          showToast("Please select at least one day of the week.");
+          return false;
+        }
+        repeatRule = { freq: "weekly", weekdays, monthDay: 1 };
+      }
+    }
+
+    checkAndPerformDailyReset(false);
+    if (!Array.isArray(state.scheduledTasks)) state.scheduledTasks = [];
+
+    if (editingScheduledTaskId) {
+      const existing = state.scheduledTasks.find((t) => t.id === editingScheduledTaskId);
+      if (existing) {
+        existing.title = title;
+        existing.type = type;
+        if (type === "once") {
+          existing.dueDate = dueDate;
+          delete existing.repeatRule;
+        } else {
+          existing.repeatRule = repeatRule;
+          delete existing.dueDate;
+          if (!existing.createdAt) existing.createdAt = todayStr;
+        }
+      }
+      showToast(`Updated task "${title}"`);
+    } else {
+      const newTask = {
+        id: uid("sched"),
+        title,
+        type,
+        completedDates: {},
+        createdAt: todayStr
+      };
+      if (type === "once") {
+        newTask.dueDate = dueDate;
+      } else {
+        newTask.repeatRule = repeatRule;
+      }
+      state.scheduledTasks.push(newTask);
+      trackAnalyticsEvent("todo_added", { task_type: type });
+      showToast(`Added task "${title}"`);
+    }
+
+    evaluateTodayDailyStar(false);
+    saveState();
+    if (closeAfter) {
+      closeScheduledTaskModal();
+    } else if (titleInput) {
+      titleInput.value = "";
+      titleInput.focus();
+    }
+    renderScheduledTasks();
+    renderDailyTasks();
+    renderCalendar();
+    renderDayInspector();
+    renderStatsAndInsights();
+    return true;
+  };
+
+  const schedAddAnotherBtn = document.getElementById("btn-sched-modal-add-another");
+  if (schedAddAnotherBtn) {
+    schedAddAnotherBtn.addEventListener("click", () => {
+      saveScheduledTaskFromModal({ closeAfter: false });
+    });
+  }
+
   const schedForm = document.getElementById("form-modal-scheduled");
   if (schedForm) {
     schedForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const titleInput = document.getElementById("input-scheduled-title");
-      const title = titleInput ? titleInput.value.trim() : "";
-      if (!title) return;
-
-      const selectedTypeBtn = document.querySelector("#sched-type-group .weight-pill-btn.is-selected");
-      const type = selectedTypeBtn ? selectedTypeBtn.dataset.schedType : "once";
-      const todayStr = getLogicalTodayStr();
-
-      let dueDate = todayStr;
-      let repeatRule = null;
-
-      if (type === "once") {
-        const dateInput = document.getElementById("input-scheduled-date");
-        dueDate = (dateInput && dateInput.value) || todayStr;
-      } else {
-        const selectedFreqBtn = document.querySelector("#sched-freq-group .weight-pill-btn.is-selected");
-        const freq = selectedFreqBtn ? selectedFreqBtn.dataset.schedFreq : "weekly";
-        if (freq === "monthly") {
-          const monthdayInput = document.getElementById("input-scheduled-monthday");
-          const monthDay = Math.min(31, Math.max(1, Number(monthdayInput && monthdayInput.value) || 1));
-          repeatRule = { freq: "monthly", weekdays: [], monthDay };
-        } else {
-          const weekdays = Array.from(
-            document.querySelectorAll("#sched-weekday-pills .weekday-pill-btn.is-selected")
-          ).map((btn) => Number(btn.dataset.weekday));
-          if (weekdays.length === 0) {
-            showToast("Please select at least one day of the week.");
-            return;
-          }
-          repeatRule = { freq: "weekly", weekdays, monthDay: 1 };
-        }
-      }
-
-      checkAndPerformDailyReset(false);
-      if (!Array.isArray(state.scheduledTasks)) state.scheduledTasks = [];
-
-      if (editingScheduledTaskId) {
-        const existing = state.scheduledTasks.find((t) => t.id === editingScheduledTaskId);
-        if (existing) {
-          existing.title = title;
-          existing.type = type;
-          if (type === "once") {
-            existing.dueDate = dueDate;
-            delete existing.repeatRule;
-          } else {
-            existing.repeatRule = repeatRule;
-            delete existing.dueDate;
-            if (!existing.createdAt) existing.createdAt = todayStr;
-          }
-        }
-        showToast(`Updated task "${title}"`);
-      } else {
-        const newTask = {
-          id: uid("sched"),
-          title,
-          type,
-          completedDates: {},
-          createdAt: todayStr
-        };
-        if (type === "once") {
-          newTask.dueDate = dueDate;
-        } else {
-          newTask.repeatRule = repeatRule;
-        }
-        state.scheduledTasks.push(newTask);
-        trackAnalyticsEvent("todo_added", { task_type: type });
-        showToast(`Added task "${title}"`);
-      }
-
-      evaluateTodayDailyStar(false);
-      saveState();
-      closeScheduledTaskModal();
-      renderScheduledTasks();
-      renderDailyTasks();
-      renderCalendar();
-      renderDayInspector();
-      renderStatsAndInsights();
+      saveScheduledTaskFromModal({ closeAfter: true });
     });
   }
 
