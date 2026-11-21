@@ -778,15 +778,16 @@ body {
   opacity: 1;
 }
 
-/* 2-Column Bento Dashboard Layout (Left: Compact Activity Pool & Task Hub | Right: Calendar, Day Inspector & Insights) */
+/* 3-Column Bento Dashboard Layout (Left: Activity Lists | Middle: Daily Checklist & To-Do | Right: Calendar, Day Inspector & Insights) */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 470px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 1fr) minmax(260px, 0.78fr) minmax(360px, 1.25fr);
   gap: 18px;
   align-items: start;
 }
 
 .column-left,
+.column-middle,
 .column-right {
   display: flex;
   flex-direction: column;
@@ -794,7 +795,7 @@ body {
   min-width: 0;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1080px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -3771,21 +3772,20 @@ body {
   }
 
   /* Mobile View Switching via Sticky Bottom Nav */
-  .app-shell[data-mobile-view="decide"] #daily-tasks-card,
-  .app-shell[data-mobile-view="decide"] #scheduled-tasks-card,
+  .app-shell[data-mobile-view="decide"] .column-middle,
   .app-shell[data-mobile-view="decide"] .column-right {
     display: none;
   }
 
   .app-shell[data-mobile-view="tasks"] .hero-decision-section,
-  .app-shell[data-mobile-view="tasks"] #pool-card,
-  .app-shell[data-mobile-view="tasks"] #procrastination-card,
+  .app-shell[data-mobile-view="tasks"] .column-left,
   .app-shell[data-mobile-view="tasks"] .column-right {
     display: none;
   }
 
   .app-shell[data-mobile-view="calendar"] .hero-decision-section,
-  .app-shell[data-mobile-view="calendar"] .column-left {
+  .app-shell[data-mobile-view="calendar"] .column-left,
+  .app-shell[data-mobile-view="calendar"] .column-middle {
     display: none;
   }
 
