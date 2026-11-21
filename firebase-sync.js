@@ -29,7 +29,9 @@ import {
 import {
   getAnalytics,
   isSupported as isAnalyticsSupported,
-  logEvent
+  logEvent,
+  setUserProperties,
+  setUserId
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-analytics.js";
 
 const firebaseConfig = {
@@ -52,6 +54,7 @@ isAnalyticsSupported()
   .then((supported) => {
     if (supported) {
       analytics = getAnalytics(app);
+      syncAnalyticsUser(currentUser);
     }
   })
   .catch(() => {});
@@ -79,6 +82,18 @@ let isExplicitSignOut = false;
 function notifyToast(msg) {
   if (window.DecideForMeApp && typeof window.DecideForMeApp.showToast === "function") {
     window.DecideForMeApp.showToast(msg);
+  }
+}
+
+function syncAnalyticsUser(user) {
+  if (!analytics) return;
+  try {
+    setUserId(analytics, user && !user.isAnonymous ? user.uid : null);
+    setUserProperties(analytics, {
+      account_type: getAccountType(user)
+    });
+  } catch {
+    // Ignore analytics errors
   }
 }
 
@@ -903,6 +918,7 @@ async function deleteAccount() {
 onAuthStateChanged(auth, async (user) => {
   if (!user || user.isAnonymous) {
     currentUser = null;
+    syncAnalyticsUser(null);
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
@@ -921,6 +937,7 @@ onAuthStateChanged(auth, async (user) => {
 
   isExplicitSignOut = false;
   currentUser = user;
+  syncAnalyticsUser(user);
   updateAccountUI(user);
   await attachUserSync(user);
 });
