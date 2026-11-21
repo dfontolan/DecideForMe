@@ -4854,15 +4854,16 @@ body {
     inset -2px -2px 0 #808080;
 }
 
+[data-theme="win95"] .mobile-nav-btn.active,
 [data-theme="win95"] .mobile-nav-btn.is-active {
-  background: #dfdfdf;
-  color: #000000;
+  background: #000080;
+  color: #ffffff;
   font-weight: 700;
   box-shadow:
     inset 1px 1px 0 #000000,
     inset -1px -1px 0 #ffffff,
-    inset 2px 2px 0 #808080,
-    inset -2px -2px 0 #dfdfdf;
+    inset 2px 2px 0 #000040,
+    inset -2px -2px 0 #4a6cd4;
 }
 
 /* Classic Win95 Scrollbars */

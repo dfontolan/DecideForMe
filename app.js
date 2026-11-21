@@ -2116,6 +2116,8 @@ function renderScheduledTasks() {
       .filter(Boolean)
       .join(" ");
 
+    const showMetaPill = !(scheduledViewMode === "today" && meta.label === "Today");
+
     li.innerHTML = `
       <div class="daily-task-left">
         <span class="drag-grip" title="Drag to reorder" aria-hidden="true">⠿</span>
@@ -2123,9 +2125,10 @@ function renderScheduledTasks() {
           <div class="activity-title-group">
             <span class="daily-task-title" title="Click to toggle">${escapeHtml(task.title)}</span>
           </div>
+          ${showMetaPill ? `
           <div class="scheduled-task-meta-row">
             <span class="sched-meta-pill ${meta.isRepeat ? "is-repeat" : ""} ${meta.isOverdue ? "is-overdue" : ""}">${escapeHtml(meta.label)}</span>
-          </div>
+          </div>` : ""}
         </div>
       </div>
       <div class="daily-task-actions">
