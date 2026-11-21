@@ -311,6 +311,50 @@
   color: var(--star-gold);
 }
 
+[data-theme="win95"] {
+  --bg-page: #008080;
+  --bg-card: #c0c0c0;
+  --bg-card-elevated: #c0c0c0;
+  --bg-input: #ffffff;
+  --bg-hover: #d4d0c8;
+  --border-color: #808080;
+  --border-subtle: #808080;
+
+  --text-primary: #000000;
+  --text-secondary: #1a1a1a;
+  --text-muted: #4a4a4a;
+
+  --accent-primary: #000080;
+  --accent-primary-hover: #1084d0;
+  --accent-glow: rgba(0, 0, 128, 0.22);
+
+  --success: #008000;
+  --success-hover: #006400;
+  --success-bg: #d9f2d9;
+
+  --warning: #806000;
+  --warning-bg: #fff6cc;
+  --star-gold: #9a6b00;
+  --star-bg: #fff0b3;
+  --star-silver: #505050;
+  --star-silver-bg: #e0e0e0;
+  --freeze-cyan: #006680;
+  --freeze-bg: #d4f1f4;
+  --danger: #b00000;
+  --danger-hover: #8a0000;
+  --danger-bg: #ffd9d9;
+
+  --shadow-card:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    2px 2px 0 rgba(0, 0, 0, 0.35);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -4108,6 +4152,633 @@ body {
   font-size: 0.9rem;
   color: var(--text-secondary);
   line-height: 1.4;
+}
+
+/* ==========================================
+   WINDOWS 95 THEME — ALL-IN RETRO DESKTOP
+   ========================================== */
+[data-theme="win95"] body {
+  font-family: "MS Sans Serif", "Microsoft Sans Serif", Tahoma, "Segoe UI", sans-serif;
+  background-color: #008080;
+  color: #000000;
+}
+
+[data-theme="win95"] .app-header {
+  background: #c0c0c0;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border: none;
+  box-shadow: var(--shadow-card);
+}
+
+[data-theme="win95"] .brand-icon {
+  border-radius: 0;
+  background: #000080;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+}
+
+[data-theme="win95"] .brand h1 {
+  letter-spacing: 0;
+  color: #000000;
+}
+
+[data-theme="win95"] .brand-subtitle {
+  color: #2b2b2b;
+}
+
+/* Raised Win95 Windows (Cards & Modals) with Classic Title Bar */
+[data-theme="win95"] .card,
+[data-theme="win95"] .modal-card {
+  position: relative;
+  background: #c0c0c0;
+  border: none;
+  border-radius: 0;
+  box-shadow: var(--shadow-card);
+}
+
+/* Only cards without a built-in header bar (.decision-card, .modal-card) use ::before for the title bar */
+[data-theme="win95"] .decision-card,
+[data-theme="win95"] .modal-card {
+  padding-top: 38px;
+}
+
+[data-theme="win95"] .decision-card::before,
+[data-theme="win95"] .modal-card::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  height: 22px;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='16' viewBox='0 0 50 16'%3E%3Cg%3E%3Crect x='0' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M1 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Crect x='3' y='10' width='8' height='2' fill='%23000'/%3E%3Crect x='17' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M18 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Crect x='20' y='4' width='9' height='8' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3Crect x='34' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M35 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Cpath d='M38 5l7 7M45 5l-7 7' stroke='%23000' stroke-width='1.6'/%3E%3C/g%3E%3C/svg%3E")
+      right 4px center / 50px 16px no-repeat,
+    linear-gradient(90deg, #000080, #1084d0);
+}
+
+/* Headered cards turn their actual header (title + collapse + actions) into the Win95 title bar */
+[data-theme="win95"] .card > .section-header:first-child,
+[data-theme="win95"] .card > .inspector-header:first-child,
+[data-theme="win95"] .card > .calendar-header:first-child {
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #ffffff;
+  margin: -14px -14px 12px -14px;
+  padding: 5px 8px;
+  border-radius: 0;
+  min-height: 28px;
+  align-items: center;
+}
+
+/* Non-collapsible headered cards still show decorative [_][□][x] buttons on the right */
+[data-theme="win95"] .calendar-card > .calendar-header:first-child,
+[data-theme="win95"] .day-inspector-card > .inspector-header:first-child {
+  padding-right: 64px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='16' viewBox='0 0 50 16'%3E%3Cg%3E%3Crect x='0' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M1 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Crect x='3' y='10' width='8' height='2' fill='%23000'/%3E%3Crect x='17' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M18 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Crect x='20' y='4' width='9' height='8' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3Crect x='34' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M35 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Cpath d='M38 5l7 7M45 5l-7 7' stroke='%23000' stroke-width='1.6'/%3E%3C/g%3E%3C/svg%3E")
+      right 6px top 6px / 50px 16px no-repeat,
+    linear-gradient(90deg, #000080, #1084d0);
+}
+
+/* Collapsible cards: turn .btn-collapse-toggle into the Win95 [_][□][x] buttons */
+[data-theme="win95"] .btn-icon.btn-collapse-toggle {
+  width: 50px;
+  height: 16px;
+  padding: 0;
+  flex-shrink: 0;
+  border: none;
+  box-shadow: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='50' height='16' viewBox='0 0 50 16'%3E%3Cg%3E%3Crect x='0' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M1 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Crect x='3' y='10' width='8' height='2' fill='%23000'/%3E%3Crect x='17' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M18 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Crect x='20' y='4' width='9' height='8' fill='none' stroke='%23000' stroke-width='1.5'/%3E%3Crect x='34' y='1' width='15' height='14' fill='%23c0c0c0' stroke='%23000' stroke-width='1'/%3E%3Cpath d='M35 14V2h13' fill='none' stroke='%23fff' stroke-width='1'/%3E%3Cpath d='M38 5l7 7M45 5l-7 7' stroke='%23000' stroke-width='1.6'/%3E%3C/g%3E%3C/svg%3E")
+    center / 50px 16px no-repeat;
+}
+
+[data-theme="win95"] .btn-icon.btn-collapse-toggle:hover:not(:disabled) {
+  background-color: transparent;
+  filter: brightness(1.08);
+}
+
+[data-theme="win95"] .btn-icon.btn-collapse-toggle:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+[data-theme="win95"] .btn-icon.btn-collapse-toggle .collapse-chevron {
+  display: none;
+}
+
+[data-theme="win95"] .scheduled-tasks-card .daily-header-actions,
+[data-theme="win95"] .daily-tasks-card .daily-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+[data-theme="win95"] .card.is-collapsed > .section-header:first-child,
+[data-theme="win95"] .card.is-collapsed > .inspector-header:first-child {
+  margin-bottom: -14px;
+}
+
+[data-theme="win95"] .card > .section-header:first-child .section-label,
+[data-theme="win95"] .card > .inspector-header:first-child .section-label,
+[data-theme="win95"] .card > .inspector-header:first-child h3,
+[data-theme="win95"] .card > .inspector-header:first-child h4,
+[data-theme="win95"] .card > .calendar-header:first-child h3 {
+  color: #ffffff;
+}
+
+[data-theme="win95"] .card > .inspector-header:first-child .text-muted {
+  color: #dbe6ff;
+}
+
+[data-theme="win95"] .card > .section-header:first-child .badge,
+[data-theme="win95"] .card > .inspector-header:first-child .badge,
+[data-theme="win95"] .card > .calendar-header:first-child .badge {
+  background: #c0c0c0;
+  color: #000000;
+  border: 1px solid #000000;
+  border-radius: 0;
+}
+
+[data-theme="win95"] .card > .section-header:first-child .btn-primary,
+[data-theme="win95"] .card > .inspector-header:first-child .btn-primary {
+  background: #c0c0c0;
+  color: #000000;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+}
+
+[data-theme="win95"] .card > .section-header:first-child .btn-primary:hover:not(:disabled),
+[data-theme="win95"] .card > .inspector-header:first-child .btn-primary:hover:not(:disabled) {
+  background: #d4d0c8;
+  color: #000000;
+}
+
+[data-theme="win95"] .decision-card {
+  background: #c0c0c0;
+  border-top: none;
+  padding-top: 40px;
+}
+
+[data-theme="win95"] .decision-card.has-active-choice {
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080,
+    0 0 0 2px #000080,
+    3px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Classic Win95 3D Beveled Buttons */
+[data-theme="win95"] .btn,
+[data-theme="win95"] .btn-icon,
+[data-theme="win95"] .cal-nav-btn,
+[data-theme="win95"] .view-tab,
+[data-theme="win95"] .weight-badge,
+[data-theme="win95"] .weight-pill-btn,
+[data-theme="win95"] .task-hub-tab,
+[data-theme="win95"] .hero-list-btn {
+  border-radius: 0;
+  border: none;
+  background: #c0c0c0;
+  color: #000000;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+  transition: none;
+}
+
+[data-theme="win95"] .btn:hover:not(:disabled),
+[data-theme="win95"] .btn-icon:hover:not(:disabled),
+[data-theme="win95"] .cal-nav-btn:hover,
+[data-theme="win95"] .view-tab:hover,
+[data-theme="win95"] .weight-badge:hover,
+[data-theme="win95"] .weight-pill-btn:hover,
+[data-theme="win95"] .task-hub-tab:hover,
+[data-theme="win95"] .hero-list-btn:hover {
+  background: #d4d0c8;
+  color: #000000;
+}
+
+[data-theme="win95"] .btn:active:not(:disabled),
+[data-theme="win95"] .btn-icon:active:not(:disabled),
+[data-theme="win95"] .cal-nav-btn:active,
+[data-theme="win95"] .view-tab:active,
+[data-theme="win95"] .weight-badge:active,
+[data-theme="win95"] .weight-pill-btn:active,
+[data-theme="win95"] .task-hub-tab:active,
+[data-theme="win95"] .hero-list-btn:active {
+  box-shadow:
+    inset 1px 1px 0 #000000,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #808080,
+    inset -2px -2px 0 #dfdfdf;
+  transform: translate(1px, 1px);
+}
+
+[data-theme="win95"] .btn:focus-visible,
+[data-theme="win95"] .btn-icon:focus-visible,
+[data-theme="win95"] .task-hub-tab:focus-visible,
+[data-theme="win95"] .hero-list-btn:focus-visible {
+  outline: 1px dotted #000000;
+  outline-offset: -4px;
+}
+
+[data-theme="win95"] .btn-primary,
+[data-theme="win95"] .btn-decide {
+  background: #000080;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px #000000,
+    inset 1px 1px 0 #6688ff,
+    inset -1px -1px 0 #000040,
+    inset 2px 2px 0 #3355cc,
+    inset -2px -2px 0 #000055;
+}
+
+[data-theme="win95"] .btn-primary:hover:not(:disabled),
+[data-theme="win95"] .btn-decide:hover:not(:disabled) {
+  background: #1048a8;
+  color: #ffffff;
+  transform: none;
+  filter: none;
+}
+
+[data-theme="win95"] .btn-primary:active:not(:disabled),
+[data-theme="win95"] .btn-decide:active:not(:disabled) {
+  box-shadow:
+    0 0 0 1px #000000,
+    inset 1px 1px 0 #000040,
+    inset -1px -1px 0 #6688ff;
+  transform: translate(1px, 1px);
+}
+
+[data-theme="win95"] .btn-primary:focus-visible,
+[data-theme="win95"] .btn-decide:focus-visible {
+  outline: 1px dotted #ffffff;
+  outline-offset: -4px;
+}
+
+[data-theme="win95"] .btn-success {
+  background: #008000;
+  color: #ffffff;
+  box-shadow:
+    inset 1px 1px 0 #66cc66,
+    inset -1px -1px 0 #003300,
+    inset 2px 2px 0 #33aa33,
+    inset -2px -2px 0 #005500;
+}
+
+[data-theme="win95"] .btn-success:hover:not(:disabled) {
+  background: #009400;
+  color: #ffffff;
+}
+
+[data-theme="win95"] .btn-danger {
+  background: #b00000;
+  color: #ffffff;
+  box-shadow:
+    inset 1px 1px 0 #ff8080,
+    inset -1px -1px 0 #4d0000,
+    inset 2px 2px 0 #d93636,
+    inset -2px -2px 0 #7a0000;
+}
+
+[data-theme="win95"] .btn-danger:hover:not(:disabled) {
+  background: #c80000;
+  color: #ffffff;
+}
+
+[data-theme="win95"] .btn-outline-danger {
+  color: #990000;
+}
+
+[data-theme="win95"] .btn-outline-danger:hover:not(:disabled) {
+  background: #ffd9d9;
+  color: #800000;
+}
+
+/* Active / Pressed Tabs & Switchers */
+[data-theme="win95"] .hero-list-switcher,
+[data-theme="win95"] .task-hub-tabs,
+[data-theme="win95"] .view-tabs,
+[data-theme="win95"] .view-toggle-group {
+  background: #c0c0c0;
+  border: none;
+  border-radius: 0;
+  padding: 4px;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff;
+}
+
+[data-theme="win95"] .view-toggle-btn {
+  border-radius: 0;
+  border: none;
+  background: #c0c0c0;
+  color: #000000;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+}
+
+[data-theme="win95"] .hero-list-btn.active,
+[data-theme="win95"] .task-hub-tab.is-active,
+[data-theme="win95"] .view-tab.active,
+[data-theme="win95"] .view-toggle-btn.active,
+[data-theme="win95"] .weight-pill-btn.active {
+  background: #dfdfdf;
+  color: #000000;
+  font-weight: 700;
+  box-shadow:
+    inset 1px 1px 0 #000000,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #808080,
+    inset -2px -2px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .hero-list-dot,
+[data-theme="win95"] .color-dot,
+[data-theme="win95"] .chosen-color-dot {
+  border-radius: 0;
+  border: 1px solid #000000;
+}
+
+/* Sunken Inputs, Textareas, Selects */
+[data-theme="win95"] .input-text,
+[data-theme="win95"] .input-select,
+[data-theme="win95"] textarea.input-text,
+[data-theme="win95"] .daily-note-input {
+  background: #ffffff;
+  color: #000000;
+  border: none;
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #000000,
+    inset -2px -2px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .input-text::placeholder {
+  color: #666666;
+}
+
+/* Classic Square Win95 Checkboxes */
+[data-theme="win95"] .activity-checkbox {
+  border-radius: 0;
+  background-color: #ffffff;
+  border: none;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #000000,
+    inset -2px -2px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .activity-checkbox:hover {
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #000080,
+    inset -2px -2px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .activity-checkbox:checked {
+  background: #ffffff;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #000000,
+    inset -2px -2px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .activity-checkbox::after {
+  border-color: #000000;
+}
+
+/* List Items & Weight Badges */
+[data-theme="win95"] .activity-item,
+[data-theme="win95"] .daily-task-item,
+[data-theme="win95"] .scheduled-task-item {
+  border-radius: 0;
+  background: #dfdfdf;
+  border: 1px solid #808080;
+  box-shadow: inset 1px 1px 0 #ffffff;
+}
+
+[data-theme="win95"] .activity-item.unchecked {
+  background: #c8c8c8;
+}
+
+[data-theme="win95"] .weight-badge[data-weight="2"] {
+  color: #000080;
+  background: #d8e4ff;
+}
+
+[data-theme="win95"] .weight-badge[data-weight="4"] {
+  color: #800000;
+  background: #ffe0cc;
+}
+
+/* Stats Bar & Pills */
+[data-theme="win95"] .stat-pill {
+  border-radius: 0;
+  background: #c0c0c0;
+  border: none;
+  box-shadow:
+    inset 1px 1px 0 #808080,
+    inset -1px -1px 0 #ffffff;
+}
+
+[data-theme="win95"] .stat-value {
+  color: #000000;
+}
+
+[data-theme="win95"] .stat-label,
+[data-theme="win95"] .stat-label small {
+  color: #333333;
+}
+
+/* Dropdown Menus (Theme, Settings, Account) */
+[data-theme="win95"] .theme-dropdown,
+[data-theme="win95"] .settings-dropdown,
+[data-theme="win95"] .account-dropdown {
+  background: #c0c0c0;
+  border: none;
+  border-radius: 0;
+  padding: 4px;
+  box-shadow: var(--shadow-card);
+}
+
+[data-theme="win95"] .theme-option {
+  border-radius: 0;
+  color: #000000;
+}
+
+[data-theme="win95"] .theme-option:hover,
+[data-theme="win95"] .theme-option:focus-visible {
+  background: #000080;
+  color: #ffffff;
+}
+
+[data-theme="win95"] .theme-option.is-active {
+  background: #000080;
+  color: #ffffff;
+}
+
+[data-theme="win95"] .theme-option.is-danger {
+  color: #990000;
+}
+
+[data-theme="win95"] .theme-option.is-danger:hover {
+  background: #990000;
+  color: #ffffff;
+}
+
+/* Decision Badges & Quip */
+[data-theme="win95"] .badge-chosen,
+[data-theme="win95"] .done-today-pill,
+[data-theme="win95"] .task-hub-badge,
+[data-theme="win95"] .theme-quip {
+  border-radius: 0;
+}
+
+[data-theme="win95"] .badge-chosen {
+  background: #000080;
+  color: #ffffff;
+  border: 1px solid #000000;
+}
+
+[data-theme="win95"] .theme-quip {
+  background: #ffffe1;
+  border: 1px solid #000000;
+  color: #000000;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* Calendar Grid & Inspector */
+[data-theme="win95"] .calendar-day,
+[data-theme="win95"] .weekly-day-row {
+  border-radius: 0;
+  background: #ffffff;
+  border-color: #808080;
+}
+
+[data-theme="win95"] .calendar-day.other-month {
+  background: #d4d0c8;
+}
+
+[data-theme="win95"] .calendar-day.is-selected,
+[data-theme="win95"] .weekly-day-row.is-selected {
+  outline: 2px solid #000080;
+  outline-offset: -2px;
+}
+
+[data-theme="win95"] .calendar-tooltip {
+  border-radius: 0;
+  background: #ffffe1;
+  color: #000000;
+  border: 1px solid #000000;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="win95"] .selected-day-inspector,
+[data-theme="win95"] .top-activities-card {
+  border-radius: 0;
+  background: #dfdfdf;
+  border: 1px solid #808080;
+  box-shadow: inset 1px 1px 0 #ffffff;
+}
+
+/* Toast Notifications */
+[data-theme="win95"] .toast {
+  border-radius: 0;
+  background: #ffffe1;
+  color: #000000;
+  border: 1px solid #000000;
+  border-left: 5px solid #000080;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Footer Credit on Teal Desktop */
+[data-theme="win95"] .app-credit {
+  color: #ffffff;
+  opacity: 0.9;
+  text-shadow: 1px 1px 0 #000000;
+}
+
+/* Mobile Bottom Taskbar */
+[data-theme="win95"] .mobile-bottom-nav {
+  background: #c0c0c0;
+  border-top: 2px solid #ffffff;
+  box-shadow: inset 0 1px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .mobile-nav-btn {
+  border-radius: 0;
+  color: #000000;
+  background: #c0c0c0;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+}
+
+[data-theme="win95"] .mobile-nav-btn.is-active {
+  background: #dfdfdf;
+  color: #000000;
+  font-weight: 700;
+  box-shadow:
+    inset 1px 1px 0 #000000,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #808080,
+    inset -2px -2px 0 #dfdfdf;
+}
+
+/* Classic Win95 Scrollbars */
+[data-theme="win95"] ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+
+[data-theme="win95"] ::-webkit-scrollbar-track {
+  background: #dfdfdf;
+}
+
+[data-theme="win95"] ::-webkit-scrollbar-thumb {
+  background: #c0c0c0;
+  box-shadow:
+    inset 1px 1px 0 #ffffff,
+    inset -1px -1px 0 #000000,
+    inset 2px 2px 0 #dfdfdf,
+    inset -2px -2px 0 #808080;
+}
+
+@media (max-width: 640px) {
+  [data-theme="win95"] .card > .section-header:first-child,
+  [data-theme="win95"] .card > .inspector-header:first-child,
+  [data-theme="win95"] .card > .calendar-header:first-child {
+    margin: -10px -10px 10px -10px;
+  }
+
+  [data-theme="win95"] .card.is-collapsed > .section-header:first-child,
+  [data-theme="win95"] .card.is-collapsed > .inspector-header:first-child {
+    margin-bottom: -10px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

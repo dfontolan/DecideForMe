@@ -966,8 +966,34 @@ const TAROT_QUIPS = [
   "The World awaits on the other side of completing this."
 ];
 
+const WIN95_HERO_PROMPTS = [
+  "DecideForMe.exe is ready. Run an activity?",
+  "No illegal operations detected. What's next?",
+  "Select a task to execute in your free time:",
+  "C:\\Users\\You> What should we run next?",
+  "Task Manager recommends doing something fun.",
+  "Click 'Run Decide.exe' to roll the dice."
+];
+
+let win95HeroPromptIndex = Math.floor(Math.random() * WIN95_HERO_PROMPTS.length);
+
+function getWin95HeroTitle() {
+  return WIN95_HERO_PROMPTS[win95HeroPromptIndex % WIN95_HERO_PROMPTS.length];
+}
+
+const WIN95_QUIPS = [
+  "DecideForMe.exe has performed a valid operation.",
+  "It is now safe to complete this activity.",
+  "Clippy says: Looks like you're trying to be productive!",
+  "0 errors, 0 warnings. Proceed with this task.",
+  "Plug and Play detected: high-priority fun ahead.",
+  "Saved to C:\\HABITS\\TODAY.LOG — go knock it out!",
+  "System resources are 98% ready for this activity.",
+  "Press OK to acknowledge your fate."
+];
+
 function normalizeTheme(theme) {
-  if (theme === "astrology" || theme === "tarot") return theme;
+  if (theme === "astrology" || theme === "tarot" || theme === "win95") return theme;
   return "dark";
 }
 
@@ -977,6 +1003,10 @@ function isAstrologyTheme() {
 
 function isTarotTheme() {
   return state.theme === "tarot";
+}
+
+function isWin95Theme() {
+  return state.theme === "win95";
 }
 
 function pickSeededQuip(decision, quips) {
@@ -992,12 +1022,14 @@ function pickSeededQuip(decision, quips) {
 function getThemeQuip(decision) {
   if (isAstrologyTheme()) return pickSeededQuip(decision, ASTROLOGY_QUIPS);
   if (isTarotTheme()) return pickSeededQuip(decision, TAROT_QUIPS);
+  if (isWin95Theme()) return pickSeededQuip(decision, WIN95_QUIPS);
   return "";
 }
 
 function applyThemeCopy() {
   const astro = isAstrologyTheme();
   const tarot = isTarotTheme();
+  const win95 = isWin95Theme();
 
   const brandSubtitle = document.querySelector(".brand-subtitle");
   if (brandSubtitle) {
@@ -1005,7 +1037,9 @@ function applyThemeCopy() {
       ? "The stars have opinions. Let the cosmos decide."
       : tarot
         ? "Shuffle the deck. Let the cards decide."
-        : "Check what you're up for, and roll the dice.";
+        : win95
+          ? "DecideForMe.exe — Check what you're up for, and click Run."
+          : "Check what you're up for, and roll the dice.";
   }
 
   const heroIdleTitle = document.getElementById("hero-idle-title");
@@ -1014,12 +1048,14 @@ function applyThemeCopy() {
       ? getAstrologyHeroTitle()
       : tarot
         ? getTarotHeroTitle()
-        : "What should we do next?";
+        : win95
+          ? getWin95HeroTitle()
+          : "What should we do next?";
   }
 
   const decideDiceIcon = document.getElementById("decide-dice-icon");
   if (decideDiceIcon) {
-    decideDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : "🎲";
+    decideDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : win95 ? "💾" : "🎲";
   }
 
   const decideLabel = document.getElementById("btn-decide-label");
@@ -1028,12 +1064,14 @@ function applyThemeCopy() {
       ? "Consult the Stars!"
       : tarot
         ? "Draw a Card!"
-        : "Decide For Me!";
+        : win95
+          ? "Run Decide.exe"
+          : "Decide For Me!";
   }
 
   const rollingDiceIcon = document.getElementById("rolling-dice-icon");
   if (rollingDiceIcon) {
-    rollingDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : "🎲";
+    rollingDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : win95 ? "⌛" : "🎲";
   }
 
   const rollingLabelText = document.getElementById("rolling-label-text");
@@ -1042,7 +1080,9 @@ function applyThemeCopy() {
       ? "Aligning your chakras & blaming Mercury..."
       : tarot
         ? "Shuffling the Major Arcana..."
-        : "Rolling your checked pool...";
+        : win95
+          ? "Searching C:\\ACTIVITIES\\POOL..."
+          : "Rolling your checked pool...";
   }
 
   const rerollLabel = document.getElementById("btn-reroll-label");
@@ -1051,19 +1091,21 @@ function applyThemeCopy() {
       ? "🌙 Defy Fate (Re-roll)"
       : tarot
         ? "🃏 Draw Another (Re-roll)"
-        : "🎲 Re-roll";
+        : win95
+          ? "🎲 Retry (Re-roll)"
+          : "🎲 Re-roll";
   }
 
   const sectionLabels = [
-    ["section-label-activity-lists", "✨ Sacred Scrolls", "🃏 The Deck", "Activity Lists"],
-    ["section-label-daily-tasks", "🕯️ Daily Rituals", "🕯️ Daily Spread", "Daily Checklist"],
-    ["section-label-scheduled-tasks", "📜 To-Do & Schedule", "📜 To-Do & Schedule", "To-Do & Schedule"],
-    ["section-label-procrastination", "🕳️ The Void (Procrastination)", "🌑 Reversed Cards (Procrastination)", "Procrastination List"]
+    ["section-label-activity-lists", "✨ Sacred Scrolls", "🃏 The Deck", "📁 Activity Lists", "Activity Lists"],
+    ["section-label-daily-tasks", "🕯️ Daily Rituals", "🕯️ Daily Spread", "📋 Daily Checklist", "Daily Checklist"],
+    ["section-label-scheduled-tasks", "📜 To-Do & Schedule", "📜 To-Do & Schedule", "🗓️ To-Do & Schedule", "To-Do & Schedule"],
+    ["section-label-procrastination", "🕳️ The Void (Procrastination)", "🌑 Reversed Cards (Procrastination)", "🗑️ Recycle Bin (Procrastination)", "Procrastination List"]
   ];
-  sectionLabels.forEach(([id, astroText, tarotText, darkText]) => {
+  sectionLabels.forEach(([id, astroText, tarotText, win95Text, darkText]) => {
     const el = document.getElementById(id);
     if (el) {
-      el.textContent = astro ? astroText : tarot ? tarotText : darkText;
+      el.textContent = astro ? astroText : tarot ? tarotText : win95 ? win95Text : darkText;
     }
   });
 }
@@ -1076,7 +1118,9 @@ function applyTheme() {
       ? { icon: "🔮", label: "Astrology Theme", metaColor: "#0c071b" }
       : state.theme === "tarot"
         ? { icon: "🃏", label: "Tarot Theme", metaColor: "#12090d" }
-        : { icon: "🌙", label: "Dark Theme", metaColor: "#0f1117" };
+        : state.theme === "win95"
+          ? { icon: "🖥️", label: "Windows 95", metaColor: "#008080" }
+          : { icon: "🌙", label: "Dark Theme", metaColor: "#0f1117" };
   const icon = document.getElementById("theme-icon");
   if (icon) {
     icon.textContent = currentThemeMeta.icon;
@@ -1610,7 +1654,7 @@ function renderDecisionCard() {
     if (quipEl) {
       const quipText = getThemeQuip(d);
       if (quipText) {
-        quipEl.textContent = isTarotTheme() ? `🃏 ${quipText}` : `✨ ${quipText}`;
+        quipEl.textContent = isTarotTheme() ? `🃏 ${quipText}` : isWin95Theme() ? `💾 ${quipText}` : `✨ ${quipText}`;
         quipEl.classList.remove("hidden");
       } else {
         quipEl.textContent = "";
@@ -1629,7 +1673,9 @@ function renderDecisionCard() {
           ? "🌟 Prophecy Fulfilled!"
           : isTarotTheme()
             ? "🃏 Card Fulfilled!"
-            : "✓ Completed & Logged!";
+            : isWin95Theme()
+              ? "💾 Task Logged!"
+              : "✓ Completed & Logged!";
         badgeChosenEl.classList.add("is-win-logged");
       }
       if (completeChosenBtn) {
@@ -1646,7 +1692,9 @@ function renderDecisionCard() {
           ? "🌟 Cosmic Decree"
           : isTarotTheme()
             ? "🃏 Drawn Card"
-            : "✨ Chosen Activity";
+            : isWin95Theme()
+              ? "💾 Selected.exe"
+              : "✨ Chosen Activity";
         badgeChosenEl.classList.remove("is-win-logged");
       }
       if (completeChosenBtn) {
@@ -1656,13 +1704,17 @@ function renderDecisionCard() {
             ? `🎉 Banish from the Void!`
             : isTarotTheme()
               ? `🎉 Banish the Shadow!`
-              : `🎉 Mark Done!`;
+              : isWin95Theme()
+                ? `🗑️ Empty from Recycle Bin!`
+                : `🎉 Mark Done!`;
         } else {
           completeChosenBtn.innerHTML = isAstrologyTheme()
             ? `✨ Fulfill Prophecy &amp; Log`
             : isTarotTheme()
               ? `✨ Honor the Card &amp; Log`
-              : `✓ Mark Complete &amp; Log`;
+              : isWin95Theme()
+                ? `✓ OK — Complete &amp; Log`
+                : `✓ Mark Complete &amp; Log`;
         }
       }
     }
@@ -1688,7 +1740,9 @@ function renderDecisionCard() {
         ? "🌟 Cosmic Decree"
         : isTarotTheme()
           ? "🃏 Drawn Card"
-          : "✨ Chosen Activity";
+          : isWin95Theme()
+            ? "💾 Selected.exe"
+            : "✨ Chosen Activity";
       badgeChosenEl.classList.remove("is-win-logged");
     }
     if (completeChosenBtn) {
@@ -1697,7 +1751,9 @@ function renderDecisionCard() {
         ? `✨ Fulfill Prophecy &amp; Log`
         : isTarotTheme()
           ? `✨ Honor the Card &amp; Log`
-          : `✓ Mark Complete &amp; Log`;
+          : isWin95Theme()
+            ? `✓ OK — Complete &amp; Log`
+            : `✓ Mark Complete &amp; Log`;
     }
     idleEl.classList.remove("hidden");
     rollingEl.classList.add("hidden");
@@ -1967,13 +2023,13 @@ function renderScheduledTasks() {
 
   const visibleTasks =
     scheduledViewMode === "upcoming"
-      ? tasks
+      ? tasks.filter((t) => getScheduledTaskTargetDate(t, todayStr) > todayStr)
       : tasks.filter((t) => isTaskDueOnDate(t, todayStr) || isScheduledTaskOverdue(t, todayStr));
 
   if (visibleTasks.length === 0) {
     const emptyMsg =
       scheduledViewMode === "upcoming"
-        ? "No scheduled or one-time tasks yet. Click + Add Task to create one!"
+        ? "No upcoming tasks scheduled. Click + Add Task to create one!"
         : "Nothing scheduled for today. Click + Add Task or check Upcoming!";
     listEl.innerHTML = `<li class="empty-state">${emptyMsg}</li>`;
     return;
@@ -2304,6 +2360,7 @@ function spawnConfettiBurst(originEl, listColor) {
 
   const astro = isAstrologyTheme();
   const tarot = isTarotTheme();
+  const win95 = isWin95Theme();
   const colors = astro
     ? [
         "#f5c451", // Celestial gold
@@ -2322,7 +2379,16 @@ function spawnConfettiBurst(originEl, listColor) {
           "#1a8f6a", // Deep emerald
           listColor || PALETTE[0]
         ]
-      : [
+      : win95
+        ? [
+            "#000080", // Win95 Navy
+            "#008080", // Win95 Teal
+            "#ff0000", // VGA Red
+            "#ffff00", // VGA Yellow
+            "#00ff00", // VGA Lime
+            listColor || PALETTE[0]
+          ]
+        : [
           listColor || PALETTE[0],
           "#10b981", // --success
           "#eab308", // --star-gold
@@ -3908,6 +3974,8 @@ function initEvents() {
             astrologyHeroPromptIndex = Math.floor(Math.random() * 3);
           } else if (state.theme === "tarot") {
             tarotHeroPromptIndex = Math.floor(Math.random() * TAROT_HERO_PROMPTS.length);
+          } else if (state.theme === "win95") {
+            win95HeroPromptIndex = Math.floor(Math.random() * WIN95_HERO_PROMPTS.length);
           }
           saveState();
           applyTheme();
