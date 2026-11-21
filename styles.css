@@ -3919,6 +3919,18 @@ body {
     font-size: 1rem;
   }
 
+  /* Position modals near top on mobile so the on-screen keyboard doesn't cover buttons */
+  .modal-backdrop {
+    align-items: flex-start;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px;
+    overflow-y: auto;
+  }
+
+  .modal-card {
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+  }
+
   /* Larger touch target for drag handle on mobile */
   .drag-grip {
     padding: 4px 3px;
