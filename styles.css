@@ -2291,8 +2291,17 @@ body {
 
 .scheduled-task-content {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.scheduled-task-content .activity-title-group {
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -2301,6 +2310,7 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
 }
 
 .sched-meta-pill {
@@ -2425,8 +2435,68 @@ body {
 }
 
 .add-procrast-subtask-btn {
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.modal-subtasks-section {
+  margin-top: 14px;
+}
+
+.modal-subtask-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-subtask-input-row .input-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-subtasks-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.modal-subtask-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.85rem;
+}
+
+.modal-subtask-num {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.modal-subtask-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.modal-subtask-remove {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
   font-size: 1rem;
-  font-weight: 700;
   line-height: 1;
 }
 
@@ -4556,6 +4626,7 @@ body {
 [data-theme="win95"] .view-tab,
 [data-theme="win95"] .weight-badge,
 [data-theme="win95"] .weight-pill-btn,
+[data-theme="win95"] .weekday-pill-btn,
 [data-theme="win95"] .task-hub-tab,
 [data-theme="win95"] .hero-list-btn {
   border-radius: 0;
@@ -4576,6 +4647,7 @@ body {
 [data-theme="win95"] .view-tab:hover,
 [data-theme="win95"] .weight-badge:hover,
 [data-theme="win95"] .weight-pill-btn:hover,
+[data-theme="win95"] .weekday-pill-btn:hover,
 [data-theme="win95"] .task-hub-tab:hover,
 [data-theme="win95"] .hero-list-btn:hover {
   background: #d4d0c8;
@@ -4588,6 +4660,7 @@ body {
 [data-theme="win95"] .view-tab:active,
 [data-theme="win95"] .weight-badge:active,
 [data-theme="win95"] .weight-pill-btn:active,
+[data-theme="win95"] .weekday-pill-btn:active,
 [data-theme="win95"] .task-hub-tab:active,
 [data-theme="win95"] .hero-list-btn:active {
   box-shadow:
@@ -4709,8 +4782,7 @@ body {
 [data-theme="win95"] .hero-list-btn.active,
 [data-theme="win95"] .task-hub-tab.is-active,
 [data-theme="win95"] .view-tab.active,
-[data-theme="win95"] .view-toggle-btn.active,
-[data-theme="win95"] .weight-pill-btn.active {
+[data-theme="win95"] .view-toggle-btn.active {
   background: #dfdfdf;
   color: #000000;
   font-weight: 700;
@@ -4719,6 +4791,19 @@ body {
     inset -1px -1px 0 #ffffff,
     inset 2px 2px 0 #808080,
     inset -2px -2px 0 #dfdfdf;
+}
+
+[data-theme="win95"] .weight-pill-btn.active,
+[data-theme="win95"] .weight-pill-btn.is-selected,
+[data-theme="win95"] .weekday-pill-btn.is-selected {
+  background: #000080;
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow:
+    inset 1px 1px 0 #000000,
+    inset -1px -1px 0 #ffffff,
+    inset 2px 2px 0 #000040,
+    inset -2px -2px 0 #4a6cd4;
 }
 
 [data-theme="win95"] .hero-list-dot,
@@ -4864,6 +4949,7 @@ body {
 [data-theme="win95"] .badge-chosen,
 [data-theme="win95"] .done-today-pill,
 [data-theme="win95"] .task-hub-badge,
+[data-theme="win95"] .sched-meta-pill,
 [data-theme="win95"] .theme-quip {
   border-radius: 0;
 }

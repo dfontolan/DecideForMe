@@ -613,6 +613,20 @@
             <button type="button" class="weight-pill-btn" data-weight="4" role="radio" aria-checked="false">4x (Priority)</button>
           </div>
         </div>
+        <div class="modal-subtasks-section hidden" id="modal-list-subtasks-section">
+          <label class="form-label" for="input-modal-subtask">Subtasks (Optional)</label>
+          <div class="modal-subtask-input-row">
+            <input
+              type="text"
+              id="input-modal-subtask"
+              class="input-text"
+              placeholder="Add a step (press Enter or + Add)..."
+              maxlength="80"
+            />
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-modal-add-subtask">+ Add</button>
+          </div>
+          <ul class="modal-subtasks-list hidden" id="modal-subtasks-list"></ul>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-modal-cancel">Cancel</button>
           <button type="button" class="btn btn-secondary hidden" id="btn-modal-add-another">+ Add Another</button>

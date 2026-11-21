@@ -802,6 +802,53 @@ function setModalWeight(weight) {
   });
 }
 
+let pendingModalSubtasks = [];
+
+function renderModalSubtasksList() {
+  const listEl = document.getElementById("modal-subtasks-list");
+  if (!listEl) return;
+  if (pendingModalSubtasks.length === 0) {
+    listEl.innerHTML = "";
+    listEl.classList.add("hidden");
+    return;
+  }
+  listEl.classList.remove("hidden");
+  listEl.innerHTML = pendingModalSubtasks
+    .map(
+      (subTitle, idx) => `
+      <li class="modal-subtask-chip">
+        <span class="modal-subtask-num">${idx + 1}.</span>
+        <span class="modal-subtask-text">${escapeHtml(subTitle)}</span>
+        <button type="button" class="btn-icon danger modal-subtask-remove" data-subtask-index="${idx}" title="Remove subtask" aria-label="Remove subtask">×</button>
+      </li>
+    `
+    )
+    .join("");
+}
+
+function addPendingModalSubtask() {
+  const subInput = document.getElementById("input-modal-subtask");
+  if (!subInput) return;
+  const val = subInput.value.trim();
+  if (!val) return;
+  pendingModalSubtasks.push(val);
+  subInput.value = "";
+  renderModalSubtasksList();
+  subInput.focus();
+}
+
+function collectPendingModalSubtasks() {
+  const subInput = document.getElementById("input-modal-subtask");
+  if (subInput) {
+    const trailing = subInput.value.trim();
+    if (trailing) {
+      pendingModalSubtasks.push(trailing);
+      subInput.value = "";
+    }
+  }
+  return pendingModalSubtasks.slice();
+}
+
 // Input / Rename Pop-up Modal
 function openInputModal({
   title,
@@ -814,6 +861,7 @@ function openInputModal({
   initialColor = PALETTE[0],
   showWeightPicker = false,
   initialWeight = 1,
+  showSubtasksEditor = false,
   showAddAnother = false,
   onSave
 }) {
@@ -842,6 +890,15 @@ function openInputModal({
     }
   }
 
+  const subtasksSection = document.getElementById("modal-list-subtasks-section");
+  pendingModalSubtasks = [];
+  if (subtasksSection) {
+    subtasksSection.classList.toggle("hidden", !showSubtasksEditor);
+    const subInput = document.getElementById("input-modal-subtask");
+    if (subInput) subInput.value = "";
+    renderModalSubtasksList();
+  }
+
   const saveBtn = document.getElementById("btn-modal-save");
   if (saveBtn) saveBtn.textContent = saveLabel;
 
@@ -856,6 +913,10 @@ function openInputModal({
 
 function closeInputModal() {
   pendingInputAction = null;
+  pendingModalSubtasks = [];
+  const subInput = document.getElementById("input-modal-subtask");
+  if (subInput) subInput.value = "";
+  renderModalSubtasksList();
   document.getElementById("modal-list").classList.add("hidden");
 }
 
@@ -2113,7 +2174,13 @@ function renderScheduledTasks() {
 
   const visibleTasks =
     scheduledViewMode === "upcoming"
-      ? tasks.filter((t) => getScheduledTaskTargetDate(t, todayStr) > todayStr)
+      ? tasks
+          .filter((t) => getScheduledTaskTargetDate(t, todayStr) > todayStr)
+          .sort((a, b) => {
+            const da = getScheduledTaskTargetDate(a, todayStr);
+            const db = getScheduledTaskTargetDate(b, todayStr);
+            return da < db ? -1 : da > db ? 1 : 0;
+          })
       : tasks.filter((t) => isTaskDueOnDate(t, todayStr) || isScheduledTaskOverdue(t, todayStr));
 
   if (visibleTasks.length === 0) {
@@ -2340,10 +2407,10 @@ function renderProcrastinationList() {
         <div class="daily-task-actions">
           <button
             type="button"
-            class="btn-icon add-procrast-subtask-btn"
+            class="btn btn-outline btn-xs add-procrast-subtask-btn"
             title="Add subtask"
             aria-label="Add subtask to ${escapeHtml(task.title)}"
-          >+</button>
+          >+ Subtask</button>
           <button
             type="button"
             class="btn-icon log-procrast-btn ${task.doneToday ? "is-done" : ""}"
@@ -4759,15 +4826,24 @@ function initEvents() {
         initialValue: "",
         placeholder: "e.g., Clean out garage, File taxes, Fix squeaky door...",
         saveLabel: "Add Task",
+        showSubtasksEditor: true,
         showAddAnother: true,
-        onSave: (title) => {
+        onSave: (title, _color, _weight, subtasks = []) => {
           checkAndPerformDailyReset(false);
           if (!Array.isArray(state.procrastinationTasks)) state.procrastinationTasks = [];
-          state.procrastinationTasks.push({
+          const newTask = {
             id: uid("procrast"),
             title,
             doneToday: false
-          });
+          };
+          if (Array.isArray(subtasks) && subtasks.length > 0) {
+            newTask.subtasks = subtasks.map((subTitle) => ({
+              id: uid("sub"),
+              title: subTitle,
+              done: false
+            }));
+          }
+          state.procrastinationTasks.push(newTask);
           saveState();
           trackAnalyticsEvent("procrastination_added");
           renderAll();
@@ -5157,6 +5233,33 @@ function initEvents() {
     });
   }
 
+  const modalSubtaskInput = document.getElementById("input-modal-subtask");
+  const modalAddSubtaskBtn = document.getElementById("btn-modal-add-subtask");
+  const modalSubtasksListEl = document.getElementById("modal-subtasks-list");
+
+  if (modalAddSubtaskBtn) {
+    modalAddSubtaskBtn.addEventListener("click", addPendingModalSubtask);
+  }
+  if (modalSubtaskInput) {
+    modalSubtaskInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addPendingModalSubtask();
+      }
+    });
+  }
+  if (modalSubtasksListEl) {
+    modalSubtasksListEl.addEventListener("click", (e) => {
+      const removeBtn = e.target.closest(".modal-subtask-remove");
+      if (!removeBtn) return;
+      const idx = Number(removeBtn.dataset.subtaskIndex);
+      if (Number.isInteger(idx) && idx >= 0 && idx < pendingModalSubtasks.length) {
+        pendingModalSubtasks.splice(idx, 1);
+        renderModalSubtasksList();
+      }
+    });
+  }
+
   const addAnotherBtn = document.getElementById("btn-modal-add-another");
   if (addAnotherBtn) {
     addAnotherBtn.addEventListener("click", () => {
@@ -5166,10 +5269,13 @@ function initEvents() {
         listNameInput.focus();
         return;
       }
+      const subtasks = collectPendingModalSubtasks();
       if (typeof pendingInputAction === "function") {
-        pendingInputAction(name, selectedListModalColor, selectedModalWeight);
+        pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks);
       }
       listNameInput.value = "";
+      pendingModalSubtasks = [];
+      renderModalSubtasksList();
       listNameInput.focus();
     });
   }
@@ -5179,8 +5285,9 @@ function initEvents() {
     const name = listNameInput.value.trim();
     if (!name) return;
 
+    const subtasks = collectPendingModalSubtasks();
     if (typeof pendingInputAction === "function") {
-      pendingInputAction(name, selectedListModalColor, selectedModalWeight);
+      pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks);
     }
     closeInputModal();
   });
