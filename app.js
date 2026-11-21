@@ -1962,15 +1962,14 @@ function renderActivityPool() {
     li.draggable = isEditingActivities;
     li.dataset.itemId = item.id;
     const isChosen = state.activeDecision && state.activeDecision.itemId === item.id;
-    li.className = `activity-item ${item.checked ? "" : "unchecked"} ${isChosen ? "is-chosen" : ""}`;
+    const doneToday = completedTodayIds.has(item.id);
+    li.className = `activity-item ${item.checked ? "" : "unchecked"} ${isChosen ? "is-chosen" : ""} ${doneToday ? "is-done-today" : ""}`;
 
     const weight = normalizeWeight(item.weight);
     const probPct =
       item.checked && totalCheckedWeight > 0
         ? Math.round((weight / totalCheckedWeight) * 100)
         : 0;
-
-    const doneToday = completedTodayIds.has(item.id);
 
     li.innerHTML = `
       <div class="activity-left">
@@ -2000,7 +1999,8 @@ function renderActivityPool() {
         <button
           type="button"
           class="btn-icon log-direct-btn ${doneToday ? "is-done" : ""}"
-          title="${doneToday ? `Completed today — click to log '${escapeHtml(item.title)}' again` : `Mark '${escapeHtml(item.title)}' as completed today`}"
+          aria-pressed="${doneToday ? "true" : "false"}"
+          title="${doneToday ? `Completed today — click to undo '${escapeHtml(item.title)}'` : `Mark '${escapeHtml(item.title)}' as completed today`}"
         >
           ✓
         </button>
@@ -3972,7 +3972,25 @@ function bindDelegatedListContainers() {
         renderDecisionCard();
       } else if (e.target.closest(".log-direct-btn")) {
         const logBtn = e.target.closest(".log-direct-btn");
-        logActivityCompletion(item, activeList, getLogicalTodayStr(), logBtn);
+        const todayStr = getLogicalTodayStr();
+        const todayLogs = state.logs.filter((l) => l.date === todayStr && l.itemId === item.id);
+        if (todayLogs.length > 0) {
+          recordDeletedIds(todayLogs.map((l) => l.id));
+          state.logs = state.logs.filter((l) => !(l.date === todayStr && l.itemId === item.id));
+          state.lists.forEach((l) => {
+            l.items.forEach((it) => {
+              if (it.id === item.id) {
+                it.checked = true;
+              }
+            });
+          });
+          evaluateTodayDailyStar(false);
+          saveState();
+          renderAll();
+          showToast(`Unmarked "${item.title}" for today.`);
+          return;
+        }
+        logActivityCompletion(item, activeList, todayStr, logBtn);
       } else if (e.target.closest(".edit-item-btn")) {
         openInputModal({
           title: "Rename Activity",

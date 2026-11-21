@@ -2223,6 +2223,14 @@ body {
 .log-daily-btn.is-done {
   color: var(--success);
   background: var(--success-bg);
+  opacity: 0.42;
+}
+
+.log-direct-btn.is-done:hover,
+.log-daily-btn.is-done:hover,
+.log-sched-btn.is-done:hover,
+.log-procrast-btn.is-done:hover {
+  opacity: 0.85;
 }
 
 /* ==========================================
@@ -2340,6 +2348,7 @@ body {
 .log-sched-btn.is-done {
   color: var(--success);
   background: var(--success-bg);
+  opacity: 0.42;
 }
 
 /* ==========================================
@@ -2419,6 +2428,7 @@ body {
 .log-procrast-btn.is-done {
   color: var(--success);
   background: var(--success-bg);
+  opacity: 0.42;
 }
 
 .procrast-subtask-progress {
@@ -4869,15 +4879,36 @@ body {
 /* List Items & Weight Badges */
 [data-theme="win95"] .activity-item,
 [data-theme="win95"] .daily-task-item,
-[data-theme="win95"] .scheduled-task-item {
+[data-theme="win95"] .scheduled-task-item,
+[data-theme="win95"] .procrastination-item,
+[data-theme="win95"] .procrastination-subtask-item {
   border-radius: 0;
   background: #dfdfdf;
   border: 1px solid #808080;
   box-shadow: inset 1px 1px 0 #ffffff;
 }
 
-[data-theme="win95"] .activity-item.unchecked {
+[data-theme="win95"] .activity-item.unchecked,
+[data-theme="win95"] .activity-item.is-done-today,
+[data-theme="win95"] .daily-task-item.done,
+[data-theme="win95"] .scheduled-task-item.done,
+[data-theme="win95"] .procrastination-item.done,
+[data-theme="win95"] .procrastination-subtask-item.done {
   background: #c8c8c8;
+}
+
+[data-theme="win95"] .daily-task-item.done,
+[data-theme="win95"] .scheduled-task-item.done,
+[data-theme="win95"] .procrastination-item.done,
+[data-theme="win95"] .procrastination-subtask-item.done {
+  opacity: 0.72;
+}
+
+[data-theme="win95"] .activity-item.is-done-today .activity-title,
+[data-theme="win95"] .daily-task-item.done .daily-task-title,
+[data-theme="win95"] .scheduled-task-item.done .daily-task-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
 }
 
 [data-theme="win95"] .weight-badge[data-weight="2"] {
