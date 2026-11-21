@@ -1166,6 +1166,122 @@ body {
   }
 }
 
+/* 1% Hidden Procrastination Lottery Jackpot Animation */
+.decision-card.is-jackpot-active {
+  border-color: #f5c451;
+  box-shadow:
+    0 0 28px rgba(245, 196, 81, 0.32),
+    0 0 14px rgba(249, 115, 22, 0.22);
+}
+
+.decision-card.is-jackpot-active .badge-chosen {
+  background: linear-gradient(135deg, rgba(245, 196, 81, 0.25), rgba(249, 115, 22, 0.25));
+  border-color: rgba(245, 196, 81, 0.65);
+  color: #fde047;
+}
+
+[data-theme="win95"] .decision-card.is-jackpot-active .badge-chosen {
+  background: #800080;
+  color: #ffff00;
+  border-color: #000000;
+}
+
+.decision-card.is-lottery-jackpot {
+  animation: lotteryJackpotPulse 2.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.decision-card.is-lottery-jackpot .chosen-title {
+  animation: lotteryTitlePop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.decision-card.is-lottery-jackpot .badge-chosen {
+  animation: lotteryBadgeFlash 1.6s ease-in-out;
+}
+
+.theme-quip.is-jackpot-quip {
+  background: linear-gradient(135deg, rgba(245, 196, 81, 0.18), rgba(249, 115, 22, 0.18));
+  border-color: rgba(245, 196, 81, 0.55);
+  color: #fde047;
+  font-style: normal;
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 10px 16px;
+}
+
+[data-theme="tarot"] .theme-quip.is-jackpot-quip {
+  background: linear-gradient(135deg, rgba(212, 162, 76, 0.22), rgba(225, 29, 72, 0.18));
+  border-color: rgba(212, 162, 76, 0.65);
+  color: #f9f1e6;
+}
+
+[data-theme="win95"] .theme-quip.is-jackpot-quip {
+  background: #ffff00;
+  border: 2px solid #000000;
+  color: #000000;
+  border-radius: 0;
+  box-shadow: 3px 3px 0 #000000;
+}
+
+@keyframes lotteryJackpotPulse {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(245, 196, 81, 0.9),
+      0 0 54px 14px rgba(249, 115, 22, 0.65);
+  }
+  18% {
+    transform: scale(1.03);
+    box-shadow:
+      0 0 0 12px rgba(245, 196, 81, 0.45),
+      0 0 64px 18px rgba(245, 196, 81, 0.6);
+  }
+  40% {
+    transform: scale(0.995);
+    box-shadow:
+      0 0 0 22px rgba(249, 115, 22, 0.18),
+      0 0 46px 10px rgba(249, 115, 22, 0.45);
+  }
+  65% {
+    transform: scale(1.012);
+    box-shadow:
+      0 0 0 28px rgba(245, 196, 81, 0),
+      0 0 38px 6px rgba(245, 196, 81, 0.35);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 28px rgba(245, 196, 81, 0.32),
+      0 0 14px rgba(249, 115, 22, 0.22);
+  }
+}
+
+@keyframes lotteryTitlePop {
+  0% {
+    transform: scale(0.84);
+    filter: brightness(1.4);
+  }
+  55% {
+    transform: scale(1.06);
+    filter: brightness(1.2);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes lotteryBadgeFlash {
+  0%, 100% {
+    transform: scale(1);
+  }
+  20%, 60% {
+    transform: scale(1.1);
+  }
+  40%, 80% {
+    transform: scale(0.97);
+  }
+}
+
 /* Hero Card "Win" Hold & Exit on Completion */
 .decision-card.is-completing-win {
   --hero-list-color: var(--success) !important;
@@ -4791,6 +4907,9 @@ body {
   .decision-card.winner-aura-pulse,
   .decision-card.winner-aura-pulse::after,
   .decision-card.winner-aura-pulse .badge-chosen,
+  .decision-card.is-lottery-jackpot,
+  .decision-card.is-lottery-jackpot .chosen-title,
+  .decision-card.is-lottery-jackpot .badge-chosen,
   .stat-pill.stat-bump-success,
   .stat-pill.stat-bump-streak,
   .stat-pill.stat-bump-freeze,

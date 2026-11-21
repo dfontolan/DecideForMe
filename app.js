@@ -992,6 +992,34 @@ const WIN95_QUIPS = [
   "Press OK to acknowledge your fate."
 ];
 
+const DARK_PROCRASTINATION_JACKPOT_QUIPS = [
+  "🎰 JACKPOT! You beat 99-to-1 odds! Congratulations on your incredible luck—your grand prize is doing the thing you've been avoiding.",
+  "🎉 1% LOTTERY WINNER! Out of all the fun things you could've rolled, you hit the rarest ticket in the house. Time to tackle what you didn't want to do!",
+  "🏆 Against 100-to-1 odds, you won the grand prize! Lucky you—now go knock out the task you've been putting off.",
+  "🎲 1% Critical Hit! Congratulations, lucky roller—fate says your reward is finally doing the thing you've been dodging."
+];
+
+const ASTROLOGY_PROCRASTINATION_JACKPOT_QUIPS = [
+  "🔮 1% COSMIC JACKPOT! A once-in-a-century planetary alignment just chose you—congratulations on your absurdly lucky stars! Now you must face the task you banished to the Void.",
+  "✨ THE STARS HIT THE LOTTERY FOR YOU! 1% cosmic odds, and somehow you pulled it. How lucky! The universe insists you finally do what you've been avoiding.",
+  "🌠 1% ASTRAL MIRACLE! Saturn and Jupiter both gasped at your luck. Congrats—your celestial prize is doing the one thing you really didn't want to do!",
+  "🌙 FORTUNE'S FAVORITE (1% ODDS)! Congratulations on this rare celestial blessing. Now channel that lucky energy into conquering the Void!"
+];
+
+const TAROT_PROCRASTINATION_JACKPOT_QUIPS = [
+  "🃏 1% ARCANA JACKPOT! The Wheel of Fortune spun a 1-in-100 miracle just for you—how lucky! Now turn over that reversed card and do what you've been avoiding.",
+  "🕯️ FATE'S RAREST DRAW (1% ODDS)! Congratulations, fortunate soul—you beat the whole deck! Your destiny is to finally face the task you didn't want to pull.",
+  "✦ THE DECK HAS SPOKEN (1% CHANCE)! What astonishing luck! The Major Arcana congratulate you—and demand you complete the shadow task you've been dodging.",
+  "🌑 1% LUCKY OMEN! Out of every card on the table, you drew the rarest twist of fate. Congrats—time to conquer the task you kept face-down!"
+];
+
+const WIN95_PROCRASTINATION_JACKPOT_QUIPS = [
+  "🎰 C:\\LUCK\\JACKPOT.EXE! You just hit a 1% system lottery! Congratulations, User #1,000,000—your prize is emptying this task from the Recycle Bin!",
+  "🖥️ 1% RARE SYSTEM EVENT! What unbelievable luck! DecideForMe.exe congratulates you—now please execute the task you've been minimizing all day.",
+  "💾 CONGRATULATIONS! YOU WON THE 1% LOTTERY! No, this isn't a pop-up ad—you really rolled the Recycle Bin. Time to do what you didn't want to do!",
+  "🏆 0x000001% CRITICAL LUCKY OPERATION! Clippy is throwing confetti! Your reward for beating 99-to-1 odds is doing the task you've been putting off."
+];
+
 function normalizeTheme(theme) {
   if (theme === "astrology" || theme === "tarot" || theme === "win95") return theme;
   return "dark";
@@ -1019,7 +1047,17 @@ function pickSeededQuip(decision, quips) {
   return quips[hash % quips.length];
 }
 
+function getProcrastinationJackpotQuip(decision) {
+  if (isAstrologyTheme()) return pickSeededQuip(decision, ASTROLOGY_PROCRASTINATION_JACKPOT_QUIPS);
+  if (isTarotTheme()) return pickSeededQuip(decision, TAROT_PROCRASTINATION_JACKPOT_QUIPS);
+  if (isWin95Theme()) return pickSeededQuip(decision, WIN95_PROCRASTINATION_JACKPOT_QUIPS);
+  return pickSeededQuip(decision, DARK_PROCRASTINATION_JACKPOT_QUIPS);
+}
+
 function getThemeQuip(decision) {
+  if (decision && decision.isProcrastinationJackpot) {
+    return getProcrastinationJackpotQuip(decision);
+  }
   if (isAstrologyTheme()) return pickSeededQuip(decision, ASTROLOGY_QUIPS);
   if (isTarotTheme()) return pickSeededQuip(decision, TAROT_QUIPS);
   if (isWin95Theme()) return pickSeededQuip(decision, WIN95_QUIPS);
@@ -1622,7 +1660,7 @@ function renderDecisionCard() {
 
   if (isRolling) {
     cardEl.classList.add("is-rolling");
-    cardEl.classList.remove("has-active-choice", "is-completing-win");
+    cardEl.classList.remove("has-active-choice", "is-completing-win", "is-jackpot-active");
     activeEl.classList.remove("is-win-hold", "is-win-exit");
     idleEl.classList.add("hidden");
     rollingEl.classList.remove("hidden");
@@ -1636,11 +1674,13 @@ function renderDecisionCard() {
 
   if (displayDecision) {
     cardEl.classList.add("has-active-choice");
+    cardEl.classList.toggle("is-jackpot-active", Boolean(displayDecision.isProcrastinationJackpot));
     idleEl.classList.add("hidden");
     rollingEl.classList.add("hidden");
     activeEl.classList.remove("hidden");
 
     const d = displayDecision;
+    const isJackpot = Boolean(d.isProcrastinationJackpot);
     const chosenColor = getListColor(
       d.listId,
       d.color || PALETTE[0]
@@ -1653,16 +1693,24 @@ function renderDecisionCard() {
     const quipEl = document.getElementById("chosen-theme-quip");
     if (quipEl) {
       const quipText = getThemeQuip(d);
+      quipEl.classList.toggle("is-jackpot-quip", isJackpot);
       if (quipText) {
-        quipEl.textContent = isTarotTheme() ? `🃏 ${quipText}` : isWin95Theme() ? `💾 ${quipText}` : `✨ ${quipText}`;
+        quipEl.textContent = isJackpot
+          ? quipText
+          : isTarotTheme()
+            ? `🃏 ${quipText}`
+            : isWin95Theme()
+              ? `💾 ${quipText}`
+              : `✨ ${quipText}`;
         quipEl.classList.remove("hidden");
       } else {
         quipEl.textContent = "";
         quipEl.classList.add("hidden");
       }
     }
-    document.getElementById("chosen-probability-meta").textContent =
-      `${d.weight}x weight • ${d.probabilityPct}% chance (${d.candidateCount} checked)`;
+    document.getElementById("chosen-probability-meta").textContent = isJackpot
+      ? `1% hidden odds • Lucky draw!`
+      : `${d.weight}x weight • ${d.probabilityPct}% chance (${d.candidateCount} checked)`;
 
     if (completingDecisionSnapshot) {
       cardEl.classList.add("is-completing-win");
@@ -1688,13 +1736,23 @@ function renderDecisionCard() {
       cardEl.classList.remove("is-completing-win");
       activeEl.classList.remove("is-win-hold", "is-win-exit");
       if (badgeChosenEl) {
-        badgeChosenEl.textContent = isAstrologyTheme()
-          ? "🌟 Cosmic Decree"
-          : isTarotTheme()
-            ? "🃏 Drawn Card"
-            : isWin95Theme()
-              ? "💾 Selected.exe"
-              : "✨ Chosen Activity";
+        if (isJackpot) {
+          badgeChosenEl.textContent = isAstrologyTheme()
+            ? "🔮 1% Cosmic Jackpot!"
+            : isTarotTheme()
+              ? "🃏 1% Fated Jackpot!"
+              : isWin95Theme()
+                ? "🎰 1% System Jackpot!"
+                : "🎰 1% Lottery Jackpot!";
+        } else {
+          badgeChosenEl.textContent = isAstrologyTheme()
+            ? "🌟 Cosmic Decree"
+            : isTarotTheme()
+              ? "🃏 Drawn Card"
+              : isWin95Theme()
+                ? "💾 Selected.exe"
+                : "✨ Chosen Activity";
+        }
         badgeChosenEl.classList.remove("is-win-logged");
       }
       if (completeChosenBtn) {
@@ -1728,11 +1786,12 @@ function renderDecisionCard() {
       rerollBadge.classList.add("hidden");
     }
   } else {
-    cardEl.classList.remove("has-active-choice", "is-completing-win");
+    cardEl.classList.remove("has-active-choice", "is-completing-win", "is-jackpot-active");
     activeEl.classList.remove("is-win-hold", "is-win-exit");
     const quipEl = document.getElementById("chosen-theme-quip");
     if (quipEl) {
       quipEl.textContent = "";
+      quipEl.classList.remove("is-jackpot-quip");
       quipEl.classList.add("hidden");
     }
     if (badgeChosenEl) {
@@ -2530,6 +2589,113 @@ function triggerBigProcrastinationCelebration(originEl) {
   });
 }
 
+let lotteryJackpotTimer = null;
+
+/**
+ * Big lottery-style celebration when the hidden 1% procrastination draw hits.
+ */
+function triggerLotteryJackpotCelebration() {
+  if (prefersReducedMotion()) return;
+
+  const decisionCard = document.getElementById("decision-card");
+  if (decisionCard) {
+    if (lotteryJackpotTimer) {
+      clearTimeout(lotteryJackpotTimer);
+      lotteryJackpotTimer = null;
+    }
+    decisionCard.classList.remove("is-lottery-jackpot");
+    void decisionCard.offsetWidth;
+    decisionCard.classList.add("is-lottery-jackpot");
+    lotteryJackpotTimer = setTimeout(() => {
+      decisionCard.classList.remove("is-lottery-jackpot");
+      lotteryJackpotTimer = null;
+    }, 2600);
+  }
+
+  const astro = isAstrologyTheme();
+  const tarot = isTarotTheme();
+  const win95 = isWin95Theme();
+
+  const colors = astro
+    ? ["#f5c451", "#c084fc", "#e879f9", "#67e8f9", "#fde047", PROCRASTINATION_LIST_COLOR]
+    : tarot
+      ? ["#d4a24c", "#e11d48", "#f9f1e6", "#b8862d", "#fde047", PROCRASTINATION_LIST_COLOR]
+      : win95
+        ? ["#ffff00", "#00ff00", "#ff0000", "#000080", "#008080", PROCRASTINATION_LIST_COLOR]
+        : ["#f5c451", "#fde047", PROCRASTINATION_LIST_COLOR, "#ec4899", "#10b981", "#38bdf8"];
+
+  const glyphs = astro
+    ? ["🔮", "✨", "★", "✦", "🌠"]
+    : tarot
+      ? ["🃏", "✦", "♦", "♠", "✨"]
+      : win95
+        ? ["🎰", "💾", "★", "🏆", "✨"]
+        : ["🎰", "🪙", "✨", "★", "🎉"];
+
+  const waves = [
+    { delay: 0, count: 64, spread: 240, xRatio: 0.5, yRatio: 0.35, useCard: true },
+    { delay: 140, count: 48, spread: 260, xRatio: 0.25, yRatio: 0.38, useCard: false },
+    { delay: 280, count: 48, spread: 260, xRatio: 0.75, yRatio: 0.38, useCard: false },
+    { delay: 460, count: 56, spread: 300, xRatio: 0.5, yRatio: 0.32, useCard: true }
+  ];
+
+  waves.forEach(({ delay, count, spread, xRatio, yRatio, useCard }) => {
+    setTimeout(() => {
+      let cx = window.innerWidth * xRatio;
+      let cy = window.innerHeight * yRatio;
+      if (useCard && decisionCard && typeof decisionCard.getBoundingClientRect === "function") {
+        const rect = decisionCard.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          cx = rect.left + rect.width / 2;
+          cy = rect.top + rect.height / 2;
+        }
+      }
+
+      const layer = document.createElement("div");
+      layer.className = "confetti-burst-layer";
+      layer.setAttribute("aria-hidden", "true");
+
+      for (let i = 0; i < count; i++) {
+        const piece = document.createElement("span");
+        piece.className = "confetti-piece";
+        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+        const distance = 85 + Math.random() * spread;
+        const dx = Math.round(Math.cos(angle) * distance);
+        const dy = Math.round(Math.sin(angle) * distance - 40);
+        const rot = Math.round((Math.random() - 0.5) * 900);
+        const isCircle = i % 4 === 0;
+        const isGlyph = i % 3 === 0;
+        const w = isCircle ? 9 : 8 + Math.round(Math.random() * 7);
+        const h = isCircle ? 9 : 5 + Math.round(Math.random() * 6);
+        const dur = 1450 + Math.round(Math.random() * 600);
+        const pDelay = Math.round(Math.random() * 120);
+
+        if (isGlyph) {
+          piece.classList.add("is-star-glyph");
+          piece.textContent = glyphs[(i / 3) % glyphs.length];
+          piece.style.setProperty("--glyph-size", `${13 + (i % 6)}px`);
+        }
+
+        piece.style.setProperty("--x", `${cx}px`);
+        piece.style.setProperty("--y", `${cy}px`);
+        piece.style.setProperty("--dx", `${dx}px`);
+        piece.style.setProperty("--dy", `${dy}px`);
+        piece.style.setProperty("--rot", `${rot}deg`);
+        piece.style.setProperty("--w", `${w}px`);
+        piece.style.setProperty("--h", `${h}px`);
+        piece.style.setProperty("--r", isCircle ? "50%" : "2px");
+        piece.style.setProperty("--c", colors[i % colors.length]);
+        piece.style.setProperty("--dur", `${dur}ms`);
+        piece.style.setProperty("--delay", `${pDelay}ms`);
+        layer.appendChild(piece);
+      }
+
+      document.body.appendChild(layer);
+      setTimeout(() => layer.remove(), 2200);
+    }, delay);
+  });
+}
+
 /**
  * Snapshot current header stats so we can pop whichever pills increased.
  */
@@ -2607,23 +2773,57 @@ function triggerDecisionRoll(isReroll = false) {
     candidates = candidates.filter((i) => i.id !== state.activeDecision.itemId);
   }
 
-  const { item: chosen } = pickWeightedItem(candidates);
-  const chosenWeight = normalizeWeight(chosen.weight);
-  const probabilityPct = Math.round((chosenWeight / totalWeightAllChecked) * 100);
-  const chosenListId = chosen.listId || activeList.id;
-  const chosenListName = chosen.listName || activeList.name;
-  const chosenListColor = chosen.listColor || activeList.color || PALETTE[0];
-  const decisionPayload = {
-    itemId: chosen.id,
-    listId: chosenListId,
-    listName: chosenListName,
-    title: chosen.title,
-    color: chosenListColor,
-    weight: chosenWeight,
-    probabilityPct,
-    candidateCount: allCheckedCount,
-    rerolls: nextRerollCount
-  };
+  const availableProcrastinationTasks = (state.procrastinationTasks || []).filter(
+    (t) => !t.doneToday
+  );
+  const hitHiddenProcrastination =
+    !activeList.isProcrastination &&
+    availableProcrastinationTasks.length > 0 &&
+    Math.random() < 0.01;
+
+  let chosen;
+  let decisionPayload;
+  let chosenListColor;
+
+  if (hitHiddenProcrastination) {
+    chosen =
+      availableProcrastinationTasks[
+        Math.floor(Math.random() * availableProcrastinationTasks.length)
+      ];
+    chosenListColor = PROCRASTINATION_LIST_COLOR;
+    decisionPayload = {
+      itemId: chosen.id,
+      listId: PROCRASTINATION_LIST_ID,
+      listName: "Procrastination List",
+      title: chosen.title,
+      color: chosenListColor,
+      weight: 1,
+      probabilityPct: 1,
+      candidateCount: allCheckedCount,
+      rerolls: nextRerollCount,
+      isProcrastinationJackpot: true
+    };
+  } else {
+    const picked = pickWeightedItem(candidates);
+    chosen = picked.item;
+    const chosenWeight = normalizeWeight(chosen.weight);
+    const probabilityPct = Math.round((chosenWeight / totalWeightAllChecked) * 100);
+    const chosenListId = chosen.listId || activeList.id;
+    const chosenListName = chosen.listName || activeList.name;
+    chosenListColor = chosen.listColor || activeList.color || PALETTE[0];
+    decisionPayload = {
+      itemId: chosen.id,
+      listId: chosenListId,
+      listName: chosenListName,
+      title: chosen.title,
+      color: chosenListColor,
+      weight: chosenWeight,
+      probabilityPct,
+      candidateCount: allCheckedCount,
+      rerolls: nextRerollCount,
+      isProcrastinationJackpot: false
+    };
+  }
 
   const heroPoolMode = activeList.isProcrastination
     ? "procrastination"
@@ -2631,7 +2831,7 @@ function triggerDecisionRoll(isReroll = false) {
       ? "multi_list"
       : "single_list";
 
-  if (allCheckedCount === 1) {
+  if (allCheckedCount === 1 && !hitHiddenProcrastination) {
     state.activeDecision = decisionPayload;
     saveState();
     trackAnalyticsEvent("decide_spin", {
@@ -2673,10 +2873,15 @@ function triggerDecisionRoll(isReroll = false) {
         trackAnalyticsEvent("decide_spin", {
           is_reroll: nextRerollCount > 0,
           candidate_count: allCheckedCount,
-          pool_mode: heroPoolMode
+          pool_mode: heroPoolMode,
+          procrastination_jackpot: hitHiddenProcrastination
         });
         renderAll();
-        triggerWinnerAura(chosenListColor);
+        if (hitHiddenProcrastination) {
+          triggerLotteryJackpotCelebration();
+        } else {
+          triggerWinnerAura(chosenListColor);
+        }
       }, Math.max(rollDelays[stepIndex], 480));
       return;
     }
