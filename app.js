@@ -1483,14 +1483,21 @@ function renderHeroListSwitcherButtons(containerEl, activePool) {
       const current = getHeroSelectedIds();
       if (current.includes(PROCRASTINATION_LIST_ID)) {
         state.heroListIds = [list.id];
+        state.activeListId = list.id;
       } else if (current.includes(list.id)) {
         if (current.length > 1) {
-          state.heroListIds = current.filter((id) => id !== list.id);
+          const nextIds = current.filter((id) => id !== list.id);
+          state.heroListIds = nextIds;
+          if (!nextIds.includes(state.activeListId)) {
+            state.activeListId = nextIds[nextIds.length - 1];
+          }
+        } else {
+          state.activeListId = list.id;
         }
       } else {
         state.heroListIds = [...current, list.id];
+        state.activeListId = list.id;
       }
-      state.activeListId = list.id;
       saveState();
       renderAll();
     });

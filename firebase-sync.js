@@ -21,6 +21,8 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   doc,
+  getDoc,
+  getDocFromServer,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -78,6 +80,7 @@ let activeFlushPromise = null;
 let lastSyncedJson = "";
 let pendingPreSignInLocalState = null;
 let isExplicitSignOut = false;
+let attachGeneration = 0;
 
 function notifyToast(msg) {
   if (window.DecideForMeApp && typeof window.DecideForMeApp.showToast === "function") {
@@ -564,7 +567,64 @@ function flushSave() {
   return activeFlushPromise;
 }
 
+async function reconcileInitialSnapshot(user, snapshot, preSignInState) {
+  const hasPendingLocal = Boolean(saveTimer || pendingState || activeFlushPromise);
+  const localLatest = preSignInState || window.DecideForMeApp?.getState();
+
+  if (!snapshot.exists()) {
+    if (localLatest) {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      pendingState = null;
+      await writeStateToFirestore(user, localLatest, true);
+    } else {
+      setSyncStatus("synced");
+    }
+    return;
+  }
+
+  const cloudData = snapshot.data();
+  const cloudState = await decryptCloudData(user.uid, cloudData);
+  const needsEncryptionUpgrade = Boolean(cloudData && !cloudData.payload && cloudData.state);
+  const needsMetadataUpdate =
+    cloudData?.accountType !== getAccountType(user) || needsEncryptionUpgrade;
+
+  if (!cloudState) {
+    setSyncStatus("synced");
+    return;
+  }
+
+  const cleanCloud = sanitizeCloudState(cloudState);
+  const cleanLocal = localLatest ? sanitizeCloudState(localLatest) : null;
+  const merged = mergeLocalAndCloudState(cleanLocal, cleanCloud, hasPendingLocal);
+  const mergedJson = JSON.stringify(merged);
+  const cloudJson = JSON.stringify(cleanCloud);
+  const localJson = cleanLocal ? JSON.stringify(cleanLocal) : "";
+
+  lastSyncedJson = cloudJson;
+  if (mergedJson !== localJson) {
+    window.DecideForMeApp?.applyCloudState(merged);
+  }
+
+  if (mergedJson !== cloudJson || needsMetadataUpdate) {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    pendingState = null;
+    await writeStateToFirestore(user, merged, needsMetadataUpdate);
+    if (mergedJson !== cloudJson && !hasPendingLocal) {
+      notifyToast("Local data merged with your cloud account!");
+    }
+  } else {
+    setSyncStatus("synced");
+  }
+}
+
 async function attachUserSync(user) {
+  const myGen = ++attachGeneration;
   if (unsubscribeDoc) {
     unsubscribeDoc();
     unsubscribeDoc = null;
@@ -580,79 +640,35 @@ async function attachUserSync(user) {
   pendingPreSignInLocalState = null;
 
   setSyncStatus("syncing");
-  let hasHandledInitialSnapshot = false;
-  let isProcessingInitialSnapshot = false;
+
+  try {
+    // Ensure auth token is ready before Firestore opens its initial request/stream
+    await user.getIdToken().catch(() => {});
+    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+
+    let initialSnapshot = null;
+    try {
+      initialSnapshot = await getDocFromServer(userRef);
+    } catch (serverErr) {
+      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+      // Offline / unavailable fallback to local Firestore cache
+      initialSnapshot = await getDoc(userRef);
+    }
+
+    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+    await reconcileInitialSnapshot(user, initialSnapshot, preSignInState);
+  } catch (err) {
+    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+    console.warn("Initial Firestore sync error:", err);
+    setSyncStatus("error");
+  }
+
+  if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
 
   unsubscribeDoc = onSnapshot(
     userRef,
     async (snapshot) => {
       if (snapshot.metadata.hasPendingWrites) return;
-
-      if (!hasHandledInitialSnapshot) {
-        if (isProcessingInitialSnapshot) return;
-        isProcessingInitialSnapshot = true;
-        hasHandledInitialSnapshot = true;
-        try {
-          const hasPendingLocal = Boolean(saveTimer || pendingState || activeFlushPromise);
-          const localLatest = preSignInState || window.DecideForMeApp?.getState();
-
-          if (!snapshot.exists()) {
-            if (localLatest) {
-              if (saveTimer) {
-                clearTimeout(saveTimer);
-                saveTimer = null;
-              }
-              pendingState = null;
-              await writeStateToFirestore(user, localLatest, true);
-            } else {
-              setSyncStatus("synced");
-            }
-          } else {
-            const cloudData = snapshot.data();
-            const cloudState = await decryptCloudData(user.uid, cloudData);
-            const needsEncryptionUpgrade = Boolean(cloudData && !cloudData.payload && cloudData.state);
-            const needsMetadataUpdate =
-              cloudData?.accountType !== getAccountType(user) || needsEncryptionUpgrade;
-
-            if (cloudState) {
-              const cleanCloud = sanitizeCloudState(cloudState);
-              const cleanLocal = localLatest ? sanitizeCloudState(localLatest) : null;
-              const merged = mergeLocalAndCloudState(cleanLocal, cleanCloud, hasPendingLocal);
-              const mergedJson = JSON.stringify(merged);
-              const cloudJson = JSON.stringify(cleanCloud);
-              const localJson = cleanLocal ? JSON.stringify(cleanLocal) : "";
-
-              lastSyncedJson = cloudJson;
-              if (mergedJson !== localJson) {
-                window.DecideForMeApp?.applyCloudState(merged);
-              }
-
-              if (mergedJson !== cloudJson || needsMetadataUpdate) {
-                if (saveTimer) {
-                  clearTimeout(saveTimer);
-                  saveTimer = null;
-                }
-                pendingState = null;
-                await writeStateToFirestore(user, merged, needsMetadataUpdate);
-                if (mergedJson !== cloudJson && !hasPendingLocal) {
-                  notifyToast("Local data merged with your cloud account!");
-                }
-              } else {
-                setSyncStatus("synced");
-              }
-            } else {
-              setSyncStatus("synced");
-            }
-          }
-        } catch (err) {
-          console.warn("Initial Firestore sync error:", err);
-          setSyncStatus("error");
-        } finally {
-          isProcessingInitialSnapshot = false;
-        }
-        return;
-      }
-
       if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
       if (!snapshot.exists()) return;
       try {
@@ -917,6 +933,7 @@ async function deleteAccount() {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user || user.isAnonymous) {
+    attachGeneration++;
     currentUser = null;
     syncAnalyticsUser(null);
     if (saveTimer) {
