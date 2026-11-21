@@ -621,7 +621,11 @@ function evaluateTodayDailyStar(announceIfEarned = false) {
   if (allDailyTasksDone) {
     state.dailyStarsByDate[todayStr] = true;
     if (!hadDailyTasksDone && announceIfEarned) {
-      if (hasActivityLoggedToday && scheduledDoneToday) {
+      const earnedGold = hasActivityLoggedToday && scheduledDoneToday;
+      trackAnalyticsEvent("daily_star_earned", {
+        star_type: earnedGold ? "gold" : "silver"
+      });
+      if (earnedGold) {
         showToast("⭐ Gold Daily Star earned! All Daily Tasks, Scheduled Tasks + Activity completed today!");
       } else if (!hasActivityLoggedToday && !scheduledDoneToday) {
         showToast("★ Silver Star earned! Complete an activity & today's scheduled tasks to upgrade to Gold!");
@@ -2546,12 +2550,19 @@ function triggerDecisionRoll(isReroll = false) {
     rerolls: nextRerollCount
   };
 
+  const heroPoolMode = activeList.isProcrastination
+    ? "procrastination"
+    : activeList.isMultiList
+      ? "multi_list"
+      : "single_list";
+
   if (allCheckedCount === 1) {
     state.activeDecision = decisionPayload;
     saveState();
     trackAnalyticsEvent("decide_spin", {
       is_reroll: nextRerollCount > 0,
-      candidate_count: allCheckedCount
+      candidate_count: allCheckedCount,
+      pool_mode: heroPoolMode
     });
     renderAll();
     triggerWinnerAura(chosenListColor);
@@ -2586,7 +2597,8 @@ function triggerDecisionRoll(isReroll = false) {
         saveState();
         trackAnalyticsEvent("decide_spin", {
           is_reroll: nextRerollCount > 0,
-          candidate_count: allCheckedCount
+          candidate_count: allCheckedCount,
+          pool_mode: heroPoolMode
         });
         renderAll();
         triggerWinnerAura(chosenListColor);
@@ -2687,6 +2699,7 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), origi
   renderAll();
   animateStatBumps(prevStats);
   if (dateStr === todayStr && !wasGoldToday && todayStarAfter && todayStarAfter.hasGoldStar) {
+    trackAnalyticsEvent("daily_star_earned", { star_type: "gold" });
     showToast(`Completed "${item.title}"! ★ Upgraded to Gold Daily Star!`);
   } else if (
     dateStr === todayStr &&
@@ -3592,6 +3605,9 @@ function bindDelegatedListContainers() {
         }
         evaluateTodayDailyStar(true);
         saveState();
+        if (task.doneToday) {
+          trackAnalyticsEvent("daily_completed");
+        }
         renderDailyTasks();
         renderCalendar();
         renderDayInspector();
@@ -3685,6 +3701,11 @@ function bindDelegatedListContainers() {
         ).hasGoldStar;
 
         saveState();
+        if (markedDoneNow) {
+          trackAnalyticsEvent("todo_completed", {
+            is_scheduled_ahead: activeIsAhead
+          });
+        }
         renderScheduledTasks();
         renderDailyTasks();
         renderCalendar();
@@ -3697,6 +3718,7 @@ function bindDelegatedListContainers() {
           const dLabel = `${SHORT_MONTH_NAMES[dObj.getMonth()]} ${dObj.getDate()}`;
           showToast(`Completed "${task.title}" ahead of schedule (for ${dLabel})!`);
         } else if (!wasGold && nowGold) {
+          trackAnalyticsEvent("daily_star_earned", { star_type: "gold" });
           showToast(`Completed "${task.title}"! ⭐ Gold Daily Star earned!`);
         }
         announceFreezeIfEarned(prevStats.availableFreezes);
@@ -3758,6 +3780,11 @@ function bindDelegatedListContainers() {
           state.activeDecision = null;
         }
         saveState();
+        if (task.doneToday) {
+          trackAnalyticsEvent("procrastination_completed", {
+            from_active_decision: false
+          });
+        }
         renderProcrastinationList();
         renderDecisionCard();
         if (task.doneToday) {
@@ -4096,6 +4123,9 @@ function initEvents() {
       }
       state.activeDecision = null;
       saveState();
+      trackAnalyticsEvent("procrastination_completed", {
+        from_active_decision: true
+      });
       renderAll();
       triggerBigProcrastinationCelebration(e.currentTarget);
       showToast(`🎉 Finally tackled "${d.title}"! It'll vanish tomorrow!`);
@@ -4215,6 +4245,7 @@ function initEvents() {
             doneToday: false
           });
           saveState();
+          trackAnalyticsEvent("procrastination_added");
           renderAll();
           showToast(`Added "${title}" to Procrastination List`);
         }
@@ -4378,6 +4409,7 @@ function initEvents() {
           newTask.repeatRule = repeatRule;
         }
         state.scheduledTasks.push(newTask);
+        trackAnalyticsEvent("todo_added", { task_type: type });
         showToast(`Added task "${title}"`);
       }
 
@@ -4415,6 +4447,7 @@ function initEvents() {
             weight: normalizeWeight(weight)
           });
           saveState();
+          trackAnalyticsEvent("activity_added");
           renderListTabs();
           renderActivityPool();
           renderDecisionCard();
@@ -4444,6 +4477,7 @@ function initEvents() {
           });
           evaluateTodayDailyStar(false);
           saveState();
+          trackAnalyticsEvent("daily_added");
           renderDailyTasks();
           renderCalendar();
           renderDayInspector();
@@ -4535,6 +4569,7 @@ function initEvents() {
         state.lists.push(newList);
         state.activeListId = newList.id;
         saveState();
+        trackAnalyticsEvent("list_created");
         renderAll();
         showToast(`Created list "${name}"`);
       }
@@ -4942,6 +4977,7 @@ function initPwa() {
   window.addEventListener("appinstalled", () => {
     deferredInstallPrompt = null;
     installBtn.classList.add("hidden");
+    trackAnalyticsEvent("pwa_installed");
     showToast("DecideForMe installed! You can now launch it offline anytime.");
   });
 }
