@@ -4115,6 +4115,22 @@ function initEvents() {
     });
   });
 
+  // Mobile Stat Pill Tap Explanations (desktop uses native hover title tooltips)
+  document.querySelectorAll(".stats-bar .stat-pill").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      if (
+        !window.matchMedia("(max-width: 640px)").matches &&
+        !window.matchMedia("(hover: none)").matches
+      ) {
+        return;
+      }
+      const explanation = pill.getAttribute("title");
+      if (explanation) {
+        showToast(explanation);
+      }
+    });
+  });
+
   // Decide For Me & Active Choice Actions
   document.getElementById("btn-decide").addEventListener("click", () => triggerDecisionRoll(false));
   document.getElementById("btn-reroll").addEventListener("click", () => triggerDecisionRoll(true));

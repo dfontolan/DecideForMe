@@ -1674,14 +1674,15 @@ body {
 }
 
 .btn-edit-mode.is-active {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
+  background: var(--success);
+  border-color: var(--success);
   color: #ffffff;
-  box-shadow: 0 2px 8px var(--accent-glow);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--success) 35%, transparent);
 }
 
 .btn-edit-mode.is-active:hover:not(:disabled) {
-  background: var(--accent-primary-hover);
+  background: var(--success-hover);
+  border-color: var(--success-hover);
 }
 
 /* Hide Drag Grips, Rename & Delete buttons in normal mode; show them when Edit mode is toggled on */
@@ -3713,6 +3714,7 @@ body {
     row-gap: 1px;
     padding: 5px 4px;
     text-align: center;
+    cursor: pointer;
   }
 
   .stat-pill > div {
