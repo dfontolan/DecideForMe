@@ -63,7 +63,7 @@
             <span class="stat-label">This Month</span>
           </div>
         </div>
-        <div class="stat-pill" id="stat-pill-daily-star" title="Complete all Daily Tasks, today's Scheduled Tasks, and 1+ Activity to earn today's Gold Star">
+        <div class="stat-pill" id="stat-pill-daily-star" title="Complete all Daily Tasks, today's To-Do tasks, and 1+ Activity to earn today's Gold Star">
           <span class="stat-icon" id="stat-daily-star-icon" aria-hidden="true">☆</span>
           <div>
             <span class="stat-value" id="stat-daily-star-value">0/3</span>
@@ -416,7 +416,12 @@
               <div class="calendar-title-row">
                 <h3 id="calendar-period-title">November 2026</h3>
                 <span class="badge" id="calendar-reroll-summary" title="Total re-rolls in this calendar period">
-                  🎲 0 re-rolls
+                  🎲 0
+                </span>
+                <span class="badge calendar-star-summary" id="calendar-star-summary" title="Stars earned this month (Bronze / Silver / Gold)">
+                  <span class="cal-summary-star" title="Bronze stars"><span class="cal-summary-star-icon is-bronze" aria-hidden="true">★</span><span id="cal-month-bronze-count">0</span></span>
+                  <span class="cal-summary-star" title="Silver stars"><span class="cal-summary-star-icon is-silver" aria-hidden="true">★</span><span id="cal-month-silver-count">0</span></span>
+                  <span class="cal-summary-star" title="Gold stars"><span class="cal-summary-star-icon is-gold" aria-hidden="true">★</span><span id="cal-month-gold-count">0</span></span>
                 </span>
               </div>
             </div>
@@ -464,7 +469,7 @@
               <div class="inspector-title-row">
                 <h4 id="inspector-date-title">Today</h4>
                 <span class="badge" id="inspector-count-badge">0 completed</span>
-                <span class="badge" id="inspector-reroll-badge" title="Re-rolls on this date">🎲 0 re-rolls</span>
+                <span class="badge" id="inspector-reroll-badge" title="Re-rolls on this date">🎲 0</span>
                 <span class="badge badge-star hidden" id="inspector-star-badge" title="All Daily Tasks were completed on this date!">⭐ Daily Star</span>
                 <span class="badge badge-freeze hidden" id="inspector-freeze-badge" title="A Streak Freeze was automatically used on this date to protect your streak!">❄️ Streak Frozen</span>
               </div>

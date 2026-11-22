@@ -874,7 +874,8 @@ function openCalendarDayPopover(dateStr, anchorEl = null) {
 
   const scheduledTasksList = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
   const dayScheduled = scheduledTasksList.filter((t) => shouldShowTaskOnCalendar(t, dateStr));
-  if (dayScheduled.length === 0) {
+  const dayNote = (state.dailyNotesByDate && state.dailyNotesByDate[dateStr]) || "";
+  if (dayScheduled.length === 0 && !dayNote) {
     closeCalendarDayPopover();
     return;
   }
@@ -893,38 +894,68 @@ function openCalendarDayPopover(dateStr, anchorEl = null) {
     <div class="cal-popover-header">
       <div class="cal-popover-title-group">
         <strong class="cal-popover-date">${escapeHtml(dateLabel)}</strong>
-        <span class="badge ${doneCount === dayScheduled.length ? "badge-success" : ""}">${doneCount}/${dayScheduled.length} done</span>
+        ${
+          dayScheduled.length > 0
+            ? `<span class="badge ${doneCount === dayScheduled.length ? "badge-success" : ""}">${doneCount}/${dayScheduled.length} done</span>`
+            : ""
+        }
       </div>
-      <button type="button" class="btn-icon cal-popover-close-btn" title="Close" aria-label="Close scheduled tasks popover">✕</button>
+      <button type="button" class="btn-icon cal-popover-close-btn" title="Close" aria-label="Close day details popover">✕</button>
     </div>
-    <ul class="cal-popover-list">
-      ${dayScheduled
-        .map((task) => {
-          const isDone = isScheduledTaskDoneOnCalendarDate(task, dateStr);
-          const isOverdue = task.type === "once" && dateStr < todayStr && !isDone;
-          const typeLabel =
-            task.type === "repeat"
-              ? formatScheduledTaskMeta(task, todayStr).label
-              : isOverdue
-                ? "Overdue"
-                : "Scheduled";
-          return `
-            <li class="cal-popover-item ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}" data-sched-id="${escapeHtml(task.id)}">
-              <div class="cal-popover-item-info">
-                <span class="cal-popover-item-title">${escapeHtml(task.title)}</span>
-                <span class="cal-popover-item-meta">${escapeHtml(typeLabel)}</span>
-              </div>
-              <button
-                type="button"
-                class="btn-icon cal-popover-toggle-btn ${isDone ? "is-done" : ""}"
-                title="${isDone ? `Unmark '${escapeHtml(task.title)}'` : `Mark '${escapeHtml(task.title)}' as complete`}"
-                aria-pressed="${isDone ? "true" : "false"}"
-              >✓</button>
-            </li>
-          `;
-        })
-        .join("")}
-    </ul>
+    ${
+      dayNote
+        ? `
+      <div class="cal-popover-note">
+        <div class="cal-popover-note-content">
+          <span class="cal-popover-note-label">📝 Note</span>
+          <p class="cal-popover-note-text">${escapeHtml(dayNote)}</p>
+        </div>
+        <div class="cal-popover-note-actions">
+          <button type="button" class="btn-icon cal-popover-edit-note-btn" title="Edit note" aria-label="Edit note">
+            ${ICON_EDIT_SVG}
+          </button>
+          <button type="button" class="btn-icon danger cal-popover-delete-note-btn" title="Delete note" aria-label="Delete note">
+            ${ICON_TRASH_SVG}
+          </button>
+        </div>
+      </div>
+    `
+        : ""
+    }
+    ${
+      dayScheduled.length > 0
+        ? `
+      <ul class="cal-popover-list">
+        ${dayScheduled
+          .map((task) => {
+            const isDone = isScheduledTaskDoneOnCalendarDate(task, dateStr);
+            const isOverdue = task.type === "once" && dateStr < todayStr && !isDone;
+            const typeLabel =
+              task.type === "repeat"
+                ? formatScheduledTaskMeta(task, todayStr).label
+                : isOverdue
+                  ? "Overdue"
+                  : "Scheduled";
+            return `
+              <li class="cal-popover-item ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}" data-sched-id="${escapeHtml(task.id)}">
+                <div class="cal-popover-item-info">
+                  <span class="cal-popover-item-title">${escapeHtml(task.title)}</span>
+                  <span class="cal-popover-item-meta">${escapeHtml(typeLabel)}</span>
+                </div>
+                <button
+                  type="button"
+                  class="btn-icon cal-popover-toggle-btn ${isDone ? "is-done" : ""}"
+                  title="${isDone ? `Unmark '${escapeHtml(task.title)}'` : `Mark '${escapeHtml(task.title)}' as complete`}"
+                  aria-pressed="${isDone ? "true" : "false"}"
+                >✓</button>
+              </li>
+            `;
+          })
+          .join("")}
+      </ul>
+    `
+        : ""
+    }
   `;
 
   popover.classList.remove("hidden");
@@ -3549,6 +3580,10 @@ function renderCalendar() {
   const todayStr = getLogicalTodayStr();
   const titleEl = document.getElementById("calendar-period-title");
   const rerollSummaryEl = document.getElementById("calendar-reroll-summary");
+  const starSummaryEl = document.getElementById("calendar-star-summary");
+  if (starSummaryEl) {
+    starSummaryEl.classList.toggle("hidden", isWeekView);
+  }
   const {
     frozenDates,
     qualifyingSet,
@@ -3661,7 +3696,7 @@ function renderCalendar() {
         calMonth = cellDate.getMonth();
         renderCalendar();
         renderDayInspector();
-        if (dayScheduled.length > 0 && !shouldToggleClose) {
+        if ((dayScheduled.length > 0 || dayNote) && !shouldToggleClose) {
           openCalendarDayPopover(dateStr);
         } else {
           closeCalendarDayPopover();
@@ -3671,7 +3706,7 @@ function renderCalendar() {
       gridEl.appendChild(row);
     }
 
-    rerollSummaryEl.textContent = `🎲 ${weekRerollTotal} re-roll${weekRerollTotal === 1 ? "" : "s"} this week`;
+    rerollSummaryEl.textContent = `🎲 ${weekRerollTotal}`;
     rerollSummaryEl.classList.toggle("badge-reroll", weekRerollTotal > 0);
   } else {
     titleEl.textContent = `${MONTH_NAMES[calMonth]} ${calYear}`;
@@ -3689,6 +3724,10 @@ function renderCalendar() {
         monthRerollTotal += Number(count) || 0;
       }
     });
+
+    let monthGoldStars = 0;
+    let monthSilverStars = 0;
+    let monthBronzeStars = 0;
 
     for (let i = 0; i < totalCells; i++) {
       let cellYear = calYear;
@@ -3719,6 +3758,11 @@ function renderCalendar() {
       const dayScheduled = scheduledTasksList.filter((t) => shouldShowTaskOnCalendar(t, dateStr));
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
       const { hasGoldStar, hasSilverStar, hasBronzeStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
+      if (!isOtherMonth) {
+        if (hasGoldStar) monthGoldStars++;
+        else if (hasSilverStar) monthSilverStars++;
+        else if (hasBronzeStar) monthBronzeStars++;
+      }
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -3760,8 +3804,15 @@ function renderCalendar() {
       gridEl.appendChild(cell);
     }
 
-    rerollSummaryEl.textContent = `🎲 ${monthRerollTotal} re-roll${monthRerollTotal === 1 ? "" : "s"} this month`;
+    rerollSummaryEl.textContent = `🎲 ${monthRerollTotal}`;
     rerollSummaryEl.classList.toggle("badge-reroll", monthRerollTotal > 0);
+
+    const bronzeCountEl = document.getElementById("cal-month-bronze-count");
+    const silverCountEl = document.getElementById("cal-month-silver-count");
+    const goldCountEl = document.getElementById("cal-month-gold-count");
+    if (bronzeCountEl) bronzeCountEl.textContent = String(monthBronzeStars);
+    if (silverCountEl) silverCountEl.textContent = String(monthSilverStars);
+    if (goldCountEl) goldCountEl.textContent = String(monthGoldStars);
   }
 }
 
@@ -3963,7 +4014,7 @@ function createMonthlyDayCell({
     calMonth = cellMonth;
     renderCalendar();
     renderDayInspector();
-    if (dayScheduled.length > 0 && !shouldToggleClose) {
+    if ((dayScheduled.length > 0 || dayNote) && !shouldToggleClose) {
       openCalendarDayPopover(dateStr);
     } else {
       closeCalendarDayPopover();
@@ -4014,7 +4065,7 @@ function renderDayInspector() {
 
   // Re-roll badge: amber when > 0, neutral when 0
   const rerollBadgeEl = document.getElementById("inspector-reroll-badge");
-  rerollBadgeEl.textContent = `🎲 ${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}`;
+  rerollBadgeEl.textContent = `🎲 ${dayRerolls}`;
   rerollBadgeEl.classList.toggle("badge-reroll", dayRerolls > 0);
 
   // Star badge (Gold if Daily + Scheduled + Activity, Silver if Daily + Scheduled, Bronze if only Daily)
@@ -4259,7 +4310,7 @@ function renderStatsAndInsights() {
     const sp = getTodayStarProgress();
     const dailyPart = sp.dailyTotal === 0 ? "○ Daily Tasks (none)" : `${sp.allDailyDone ? "✓" : "○"} Daily (${sp.dailyDone}/${sp.dailyTotal})`;
     const activityPart = `${sp.hasActivityToday ? "✓" : "○"} 1+ Activity`;
-    const schedPart = sp.schedDue === 0 ? "✓ Scheduled (none due)" : `${sp.allSchedDone ? "✓" : "○"} Scheduled (${sp.schedDone}/${sp.schedDue})`;
+    const schedPart = sp.schedDue === 0 ? "✓ To-Do (none due)" : `${sp.allSchedDone ? "✓" : "○"} To-Do (${sp.schedDone}/${sp.schedDue})`;
     const breakdown = `${dailyPart} • ${activityPart} • ${schedPart}`;
 
     starPillEl.classList.toggle("is-gold", sp.starTier === "gold");
@@ -4278,8 +4329,8 @@ function renderStatsAndInsights() {
     } else if (sp.starTier === "bronze") {
       starIconEl.textContent = "★";
       starValueEl.textContent = "Bronze";
-      starSubEl.textContent = "(Need scheduled)";
-      starPillEl.setAttribute("title", `Bronze Star earned! Finish today's scheduled tasks to upgrade: ${breakdown}`);
+      starSubEl.textContent = "(Need to-do)";
+      starPillEl.setAttribute("title", `Bronze Star earned! Finish today's to-do tasks to upgrade: ${breakdown}`);
     } else {
       starIconEl.textContent = "☆";
       starValueEl.textContent = `${sp.criteriaMet}/${sp.criteriaTotal}`;
@@ -5182,6 +5233,52 @@ function initEvents() {
         return;
       }
       e._keepCalendarPopover = true;
+
+      if (e.target.closest(".cal-popover-edit-note-btn")) {
+        const dateStr = calDayPopoverEl.dataset.dateStr;
+        if (!dateStr) return;
+        const currentNote = (state.dailyNotesByDate && state.dailyNotesByDate[dateStr]) || "";
+        openInputModal({
+          title: "Edit Note",
+          label: `Note for ${dateStr}`,
+          initialValue: currentNote,
+          placeholder: "Add a daily highlight or note...",
+          maxLength: 120,
+          onSave: (newNote) => {
+            if (!state.dailyNotesByDate || typeof state.dailyNotesByDate !== "object") {
+              state.dailyNotesByDate = {};
+            }
+            state.dailyNotesByDate[dateStr] = newNote;
+            saveState();
+            renderCalendar();
+            renderDayInspector();
+            openCalendarDayPopover(dateStr);
+            showToast(`📝 Updated note for ${dateStr}`);
+          }
+        });
+        return;
+      }
+
+      if (e.target.closest(".cal-popover-delete-note-btn")) {
+        const dateStr = calDayPopoverEl.dataset.dateStr;
+        if (!dateStr) return;
+        openConfirmModal(
+          "Delete Note",
+          `Are you sure you want to delete the note for ${dateStr}?`,
+          () => {
+            if (state.dailyNotesByDate && state.dailyNotesByDate[dateStr]) {
+              delete state.dailyNotesByDate[dateStr];
+              saveState();
+              renderCalendar();
+              renderDayInspector();
+              openCalendarDayPopover(dateStr);
+              showToast(`Deleted note for ${dateStr}`);
+            }
+          }
+        );
+        return;
+      }
+
       const toggleBtn = e.target.closest(".cal-popover-toggle-btn");
       if (!toggleBtn) return;
       const itemEl = toggleBtn.closest(".cal-popover-item");
