@@ -26,6 +26,8 @@
   --star-bg: rgba(234, 179, 8, 0.16);
   --star-silver: #94a3b8;
   --star-silver-bg: rgba(148, 163, 184, 0.16);
+  --star-bronze: #d97706;
+  --star-bronze-bg: rgba(217, 119, 6, 0.16);
   --freeze-cyan: #38bdf8;
   --freeze-bg: rgba(56, 189, 248, 0.15);
   --danger: #ef4444;
@@ -1626,10 +1628,27 @@ body {
   background: var(--bg-card-elevated);
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
+  font-family: inherit;
   font-size: 0.8rem;
   line-height: 1.45;
   font-weight: 500;
-  transition: border-color 0.12s ease, background-color 0.12s ease, transform 0.12s ease;
+  transition: border-color 0.12s ease, background-color 0.12s ease, transform 0.12s ease, opacity 0.12s ease;
+}
+
+.hero-candidate-chip.is-interactive {
+  cursor: pointer;
+}
+
+.hero-candidate-chip.is-interactive:hover {
+  border-color: var(--danger);
+  color: var(--text-primary);
+  opacity: 0.85;
+  text-decoration: line-through;
+}
+
+.hero-candidate-chip.is-interactive:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
 }
 
 .hero-candidate-chip > span:first-child {
@@ -1922,6 +1941,10 @@ body {
   margin: 0;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.procrastination-subtitle {
+  margin-bottom: 10px;
 }
 
 .procrastination-card .daily-tasks-toolbar {
@@ -2252,6 +2275,11 @@ body {
 .daily-tasks-card.silver-done {
   border-color: var(--star-silver);
   box-shadow: 0 0 0 1px var(--star-silver), var(--shadow-card);
+}
+
+.daily-tasks-card.bronze-done {
+  border-color: var(--star-bronze);
+  box-shadow: 0 0 0 1px var(--star-bronze), var(--shadow-card);
 }
 
 .daily-tasks-subtitle {
@@ -2903,6 +2931,11 @@ body {
   filter: drop-shadow(0 0 3px rgba(148, 163, 184, 0.35));
 }
 
+.cal-star-inline.is-bronze {
+  color: var(--star-bronze);
+  filter: drop-shadow(0 0 3px rgba(217, 119, 6, 0.35));
+}
+
 .cal-freeze-inline {
   color: var(--freeze-cyan);
   font-size: 0.74rem;
@@ -2950,6 +2983,16 @@ body {
   background: var(--bg-card);
 }
 
+.cal-pill.is-done {
+  background: var(--success-bg);
+  color: var(--success);
+  text-decoration: line-through;
+}
+
+.cal-pill.is-overdue {
+  color: var(--danger);
+}
+
 .cal-more {
   display: block;
   font-size: 0.66rem;
@@ -2983,6 +3026,12 @@ body {
   background: var(--star-silver-bg);
   color: var(--star-silver);
   border-color: color-mix(in srgb, var(--star-silver) 45%, transparent);
+}
+
+.cal-star-tag.is-bronze {
+  background: var(--star-bronze-bg);
+  color: var(--star-bronze);
+  border-color: color-mix(in srgb, var(--star-bronze) 45%, transparent);
 }
 
 .cal-freeze-tag {
@@ -3215,6 +3264,17 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.week-activity-chip.is-done {
+  background: var(--success-bg);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  color: var(--success);
+  text-decoration: line-through;
+}
+
+.week-activity-chip.is-overdue {
+  color: var(--danger);
 }
 
 .week-empty-label {
@@ -3666,6 +3726,12 @@ body {
   color: var(--star-silver);
 }
 
+.badge-star-bronze {
+  background: var(--star-bronze-bg);
+  border-color: var(--star-bronze);
+  color: var(--star-bronze);
+}
+
 .badge-freeze {
   background: var(--freeze-bg);
   border-color: var(--freeze-cyan);
@@ -3939,6 +4005,10 @@ body {
 }
 
 .toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   background: var(--bg-card-elevated);
   border: 1px solid var(--border-color);
   border-left: 4px solid var(--success);
@@ -3948,6 +4018,90 @@ body {
   box-shadow: var(--shadow-card);
   font-size: 0.88rem;
   animation: slideInToast 0.2s ease;
+}
+
+.toast-action-btn {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--accent-primary);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.toast-action-btn:hover {
+  background: var(--accent-glow);
+  border-color: var(--accent-primary);
+}
+
+/* Inline Quick-Add Forms */
+.inline-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.inline-quick-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: 0.84rem;
+}
+
+.inline-quick-add-btn {
+  flex-shrink: 0;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.inline-subtask-add {
+  margin-top: 8px;
+  margin-bottom: 0;
+  padding-left: 14px;
+}
+
+.stat-pill.is-gold {
+  border-color: var(--star-gold);
+}
+
+.stat-pill.is-gold #stat-daily-star-icon,
+.stat-pill.is-gold #stat-daily-star-value {
+  color: var(--star-gold);
+}
+
+.stat-pill.is-silver {
+  border-color: var(--star-silver);
+}
+
+.stat-pill.is-silver #stat-daily-star-icon,
+.stat-pill.is-silver #stat-daily-star-value {
+  color: var(--star-silver);
+}
+
+.stat-pill.is-silver #stat-daily-star-icon {
+  filter: drop-shadow(0 0 3px rgba(148, 163, 184, 0.35));
+}
+
+.stat-pill.is-bronze {
+  border-color: var(--star-bronze);
+}
+
+.stat-pill.is-bronze #stat-daily-star-icon,
+.stat-pill.is-bronze #stat-daily-star-value {
+  color: var(--star-bronze);
+}
+
+.stat-pill.is-bronze #stat-daily-star-icon {
+  filter: drop-shadow(0 0 3px rgba(217, 119, 6, 0.35));
 }
 
 @keyframes slideInToast {
@@ -4140,8 +4294,8 @@ body {
   .stats-bar {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
   }
 
   .stat-pill {
@@ -4247,6 +4401,7 @@ body {
   }
 
   .mobile-nav-btn {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -4262,6 +4417,24 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .mobile-nav-icon-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mobile-nav-overdue-dot {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px var(--bg-card);
   }
 
   .mobile-nav-btn.active {

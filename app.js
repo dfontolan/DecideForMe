@@ -181,6 +181,13 @@ function recordDeletedIds(...ids) {
   });
 }
 
+function clearDeletedIds(...ids) {
+  if (!state.deletedIds || typeof state.deletedIds !== "object") return;
+  ids.forEach((id) => {
+    if (id) delete state.deletedIds[id];
+  });
+}
+
 // Application Runtime State
 let state = loadState();
 let selectedListModalColor = PALETTE[0];
@@ -198,6 +205,7 @@ let isEditingActivities = false;
 let isEditingDailyTasks = false;
 let isEditingScheduledTasks = false;
 let isEditingProcrastination = false;
+let inlineSubtaskTaskId = null;
 let scheduledViewMode = "today"; // "today" | "upcoming"
 let editingScheduledTaskId = null;
 
@@ -461,6 +469,22 @@ function isScheduledTaskDoneOnDate(task, dateStr) {
   return Boolean(task && task.completedDates && task.completedDates[dateStr]);
 }
 
+function shouldShowTaskOnCalendar(task, dateStr) {
+  if (!isTaskDueOnDate(task, dateStr)) return false;
+  if (task.type === "once" && task.createdAt && task.dueDate === task.createdAt) {
+    return false;
+  }
+  return true;
+}
+
+function isScheduledTaskDoneOnCalendarDate(task, dateStr) {
+  if (isScheduledTaskDoneOnDate(task, dateStr)) return true;
+  if (task && task.type === "once" && task.completedDates) {
+    return Object.values(task.completedDates).some(Boolean);
+  }
+  return false;
+}
+
 function getScheduledTaskTargetDate(task, todayStr) {
   if (!task) return todayStr;
   if (task.type === "once") {
@@ -498,9 +522,10 @@ function areAllScheduledTasksDoneForDate(dateStr) {
 function getStarStatusForDate(dateStr, hasActivity) {
   const hasDailyTasksDone = Boolean(state.dailyStarsByDate[dateStr]);
   const scheduledDone = areAllScheduledTasksDoneForDate(dateStr);
-  const hasGoldStar = hasDailyTasksDone && hasActivity && scheduledDone;
-  const hasSilverStar = hasDailyTasksDone && !hasGoldStar;
-  return { hasDailyTasksDone, scheduledDone, hasGoldStar, hasSilverStar };
+  const hasGoldStar = hasDailyTasksDone && scheduledDone && hasActivity;
+  const hasSilverStar = hasDailyTasksDone && scheduledDone && !hasActivity;
+  const hasBronzeStar = hasDailyTasksDone && !scheduledDone;
+  return { hasDailyTasksDone, scheduledDone, hasGoldStar, hasSilverStar, hasBronzeStar };
 }
 
 function computeStreakAndFreezes(nowObj = new Date()) {
@@ -627,17 +652,58 @@ function evaluateTodayDailyStar(announceIfEarned = false) {
       });
       if (earnedGold) {
         showToast("⭐ Gold Daily Star earned! All Daily Tasks, Scheduled Tasks + Activity completed today!");
-      } else if (!hasActivityLoggedToday && !scheduledDoneToday) {
-        showToast("★ Silver Star earned! Complete an activity & today's scheduled tasks to upgrade to Gold!");
-      } else if (!hasActivityLoggedToday) {
+      } else if (scheduledDoneToday && !hasActivityLoggedToday) {
         showToast("★ Silver Star earned! Complete an activity today to upgrade to a Gold Star & streak!");
-      } else {
-        showToast("★ Silver Star earned! Finish today's To-Do & Schedule tasks to upgrade to Gold!");
+      } else if (!scheduledDoneToday) {
+        showToast(`★ Bronze Star earned! Finish today's To-Do & Schedule tasks to upgrade to ${hasActivityLoggedToday ? "Gold" : "Silver"}!`);
       }
     }
   } else {
     delete state.dailyStarsByDate[todayStr];
   }
+}
+
+function getTodayStarProgress() {
+  const todayStr = getLogicalTodayStr();
+  const dailyTotal = state.dailyTasks.length;
+  const dailyDone = state.dailyTasks.filter((t) => Boolean(t.doneToday)).length;
+  const allDailyDone = dailyTotal > 0 && dailyDone === dailyTotal;
+
+  const hasActivityToday = state.logs.some((l) => l.date === todayStr);
+
+  const schedTasks = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+  const schedDueTasks = schedTasks.filter((t) => isTaskDueOnDate(t, todayStr));
+  const schedDue = schedDueTasks.length;
+  const schedDone = schedDueTasks.filter((t) => isScheduledTaskDoneOnDate(t, todayStr)).length;
+  const allSchedDone = schedDue === 0 || schedDone === schedDue;
+
+  const criteriaMet =
+    (allDailyDone ? 1 : 0) +
+    (hasActivityToday ? 1 : 0) +
+    (allSchedDone ? 1 : 0);
+  const criteriaTotal = 3;
+
+  const starTier =
+    allDailyDone && allSchedDone && hasActivityToday
+      ? "gold"
+      : allDailyDone && allSchedDone
+        ? "silver"
+        : allDailyDone
+          ? "bronze"
+          : "none";
+
+  return {
+    dailyDone,
+    dailyTotal,
+    allDailyDone,
+    hasActivityToday,
+    schedDone,
+    schedDue,
+    allSchedDone,
+    criteriaMet,
+    criteriaTotal,
+    starTier
+  };
 }
 
 function getActiveList() {
@@ -948,15 +1014,39 @@ function closeAboutModal() {
 }
 
 // Toast Notification
-function showToast(message) {
+function showToast(message, options = {}) {
   const container = document.getElementById("toast-container");
+  if (!container) return;
+  const { actionLabel = "", onAction = null, durationMs } = options || {};
+  const hasAction = Boolean(actionLabel && typeof onAction === "function");
+  const timeoutMs = Number.isFinite(durationMs) ? durationMs : hasAction ? 4500 : 3000;
+
   const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = message;
+  toast.className = `toast${hasAction ? " has-action" : ""}`;
+
+  const msgSpan = document.createElement("span");
+  msgSpan.className = "toast-message";
+  msgSpan.textContent = message;
+  toast.appendChild(msgSpan);
+
+  let timerId = null;
+  if (hasAction) {
+    const actionBtn = document.createElement("button");
+    actionBtn.type = "button";
+    actionBtn.className = "toast-action-btn";
+    actionBtn.textContent = actionLabel;
+    actionBtn.addEventListener("click", () => {
+      if (timerId) clearTimeout(timerId);
+      toast.remove();
+      onAction();
+    });
+    toast.appendChild(actionBtn);
+  }
+
   container.appendChild(toast);
-  setTimeout(() => {
+  timerId = setTimeout(() => {
     toast.remove();
-  }, 3000);
+  }, timeoutMs);
 }
 
 // Theme Handling
@@ -1779,7 +1869,11 @@ function renderDecisionCard() {
           const dotHtml = activeList.isMultiList
             ? `<span class="color-dot" style="background-color: ${item.listColor || activeListColor}"></span>`
             : "";
-          return `<span class="hero-candidate-chip" data-item-id="${escapeHtml(item.id)}">${dotHtml}<span>${escapeHtml(item.title)}</span>${weight > 1 ? `<span class="hero-chip-weight" data-weight="${weight}">${weight}x</span>` : ""}</span>`;
+          const weightHtml = weight > 1 ? `<span class="hero-chip-weight" data-weight="${weight}">${weight}x</span>` : "";
+          if (activeList.isProcrastination) {
+            return `<span class="hero-candidate-chip" data-item-id="${escapeHtml(item.id)}">${dotHtml}<span>${escapeHtml(item.title)}</span>${weightHtml}</span>`;
+          }
+          return `<button type="button" class="hero-candidate-chip is-interactive" data-item-id="${escapeHtml(item.id)}" data-list-id="${escapeHtml(item.listId || activeList.id)}" title="Click to exclude '${escapeHtml(item.title)}' from roll">${dotHtml}<span>${escapeHtml(item.title)}</span>${weightHtml}</button>`;
         })
         .join("");
     }
@@ -2091,18 +2185,20 @@ function renderDailyTasks() {
   const todayStr = getLogicalTodayStr();
   const hasActivityToday = state.logs.some((l) => l.date === todayStr);
   const scheduledDoneToday = areAllScheduledTasksDoneForDate(todayStr);
-  const hasGoldStarToday = allDone && hasActivityToday && scheduledDoneToday;
-  const hasSilverStarToday = allDone && !hasGoldStarToday;
+  const hasGoldStarToday = allDone && scheduledDoneToday && hasActivityToday;
+  const hasSilverStarToday = allDone && scheduledDoneToday && !hasActivityToday;
+  const hasBronzeStarToday = allDone && !scheduledDoneToday;
 
   cardEl.classList.toggle("all-done", hasGoldStarToday);
   cardEl.classList.toggle("silver-done", hasSilverStarToday);
-  progressBadgeEl.textContent = hasGoldStarToday
-    ? `★ ${doneCount}/${total} done`
-    : hasSilverStarToday
+  cardEl.classList.toggle("bronze-done", hasBronzeStarToday);
+  progressBadgeEl.textContent =
+    hasGoldStarToday || hasSilverStarToday || hasBronzeStarToday
       ? `★ ${doneCount}/${total} done`
       : `${doneCount}/${total} done`;
   progressBadgeEl.classList.toggle("badge-star", hasGoldStarToday);
   progressBadgeEl.classList.toggle("badge-star-silver", hasSilverStarToday);
+  progressBadgeEl.classList.toggle("badge-star-bronze", hasBronzeStarToday);
   progressBadgeEl.classList.remove("badge-success");
 
   if (total === 0) {
@@ -2208,6 +2304,15 @@ function renderScheduledTasks() {
 
   const todayStr = getLogicalTodayStr();
   const tasks = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+  const hasOverdueScheduled = tasks.some((t) => isScheduledTaskOverdue(t, todayStr));
+  const mobileOverdueDot = document.getElementById("mobile-nav-tasks-overdue-dot");
+  if (mobileOverdueDot) {
+    mobileOverdueDot.classList.toggle("hidden", !hasOverdueScheduled);
+  }
+  const mobileTasksBtn = document.getElementById("mobile-nav-tasks-btn");
+  if (mobileTasksBtn) {
+    mobileTasksBtn.setAttribute("aria-label", hasOverdueScheduled ? "Tasks (overdue items)" : "Tasks");
+  }
   const dueTodayTasks = tasks.filter((t) => isTaskDueOnDate(t, todayStr));
   const doneTodayCount = dueTodayTasks.filter((t) => isScheduledTaskDoneOnDate(t, todayStr)).length;
   const allDueDone = dueTodayTasks.length > 0 && doneTodayCount === dueTodayTasks.length;
@@ -2470,6 +2575,21 @@ function renderProcrastinationList() {
         </div>
       </div>
       ${subtasksHtml}
+      ${
+        inlineSubtaskTaskId === task.id
+          ? `<form class="inline-quick-add inline-subtask-add" data-procrast-id="${escapeHtml(task.id)}">
+              <input
+                type="text"
+                class="input-text inline-quick-add-input inline-subtask-input"
+                placeholder="Add subtask..."
+                maxlength="80"
+                aria-label="Subtask name"
+              />
+              <button type="submit" class="btn btn-primary btn-xs inline-quick-add-btn" title="Add subtask">+</button>
+              <button type="button" class="btn btn-ghost btn-xs cancel-inline-subtask-btn" title="Cancel">✕</button>
+            </form>`
+          : ""
+      }
     `;
 
     frag.appendChild(li);
@@ -3257,6 +3377,7 @@ function renderCalendar() {
     logsByDate.get(log.date).push(log);
   });
 
+  const scheduledTasksList = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
   const todayStr = getLogicalTodayStr();
   const titleEl = document.getElementById("calendar-period-title");
   const rerollSummaryEl = document.getElementById("calendar-reroll-summary");
@@ -3285,8 +3406,9 @@ function renderCalendar() {
       const cellDate = new Date(mondayObj.getFullYear(), mondayObj.getMonth(), mondayObj.getDate() + i);
       const dateStr = toLocalDateStr(cellDate);
       const dayLogs = logsByDate.get(dateStr) || [];
+      const dayScheduled = scheduledTasksList.filter((t) => shouldShowTaskOnCalendar(t, dateStr));
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
-      const { hasGoldStar, hasSilverStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
+      const { hasGoldStar, hasSilverStar, hasBronzeStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -3318,8 +3440,9 @@ function renderCalendar() {
       const badgesHtml = [
         isStreakDay && streakDayNum > 0 ? `<span class="cal-done-tag" title="Qualifying Streak Day #${streakDayNum}">🔥 Day ${streakDayNum}</span>` : "",
         isFrozen ? `<span class="cal-freeze-tag" title="Streak Freeze automatically used on ${dateStr}">❄️ Freeze</span>` : "",
-        hasGoldStar ? `<span class="cal-star-tag" title="Gold Star: All Daily Tasks + Activity completed on ${dateStr}">★</span>` : "",
-        hasSilverStar ? `<span class="cal-star-tag is-silver" title="Silver Star: All Daily Tasks completed on ${dateStr} (no activities logged)">★</span>` : "",
+        hasGoldStar ? `<span class="cal-star-tag" title="Gold Star: All Daily Tasks + Scheduled Tasks + Activity completed on ${dateStr}">★</span>` : "",
+        hasSilverStar ? `<span class="cal-star-tag is-silver" title="Silver Star: All Daily & Scheduled Tasks completed on ${dateStr} (no activities logged)">★</span>` : "",
+        hasBronzeStar ? `<span class="cal-star-tag is-bronze" title="Bronze Star: Daily Tasks completed on ${dateStr} (scheduled tasks incomplete)">★</span>` : "",
         dayRerolls > 0 ? `<span class="cal-reroll-tag" title="${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}">🎲 ${dayRerolls}</span>` : ""
       ]
         .filter(Boolean)
@@ -3337,16 +3460,24 @@ function renderCalendar() {
           </div>
           <div class="week-day-middle">
             ${
-              dayLogs.length > 0
-                ? dayLogs
-                    .map(
-                      (l) =>
-                        `<span class="week-activity-chip" style="border-left-color: ${getListColor(l.listId, l.color || PALETTE[0])}">${escapeHtml(l.itemTitle)}</span>`
-                    )
+              dayScheduled.length > 0
+                ? dayScheduled
+                    .map((t) => {
+                      const isDone = isScheduledTaskDoneOnCalendarDate(t, dateStr);
+                      const isOverdue = t.type === "once" && dateStr < todayStr && !isDone;
+                      const chipColor = isDone
+                        ? "var(--success)"
+                        : isOverdue
+                          ? "var(--danger)"
+                          : t.type === "repeat"
+                            ? "var(--accent-secondary, var(--accent-primary))"
+                            : "var(--accent-primary)";
+                      return `<span class="week-activity-chip ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}" style="border-left-color: ${chipColor}">${isDone ? "✓ " : ""}${escapeHtml(t.title)}</span>`;
+                    })
                     .join("")
                 : isFrozen
                   ? `<span class="week-empty-label">❄️ Streak protected by Streak Freeze</span>`
-                  : `<span class="week-empty-label">No completed activities</span>`
+                  : `<span class="week-empty-label">No scheduled tasks</span>`
             }
             ${dayNote ? `<div class="week-day-note"><span aria-hidden="true">📝</span> <span>${escapeHtml(dayNote)}</span></div>` : ""}
           </div>
@@ -3413,8 +3544,9 @@ function renderCalendar() {
 
       const dateStr = `${cellYear}-${String(cellMonth + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
       const dayLogs = logsByDate.get(dateStr) || [];
+      const dayScheduled = scheduledTasksList.filter((t) => shouldShowTaskOnCalendar(t, dateStr));
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
-      const { hasGoldStar, hasSilverStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
+      const { hasGoldStar, hasSilverStar, hasBronzeStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -3431,10 +3563,13 @@ function renderCalendar() {
       const cell = createMonthlyDayCell({
         dayNum,
         dateStr,
+        todayStr,
         dayLogs,
+        dayScheduled,
         dayRerolls,
         hasGoldStar,
         hasSilverStar,
+        hasBronzeStar,
         isFrozen,
         isStreakDay,
         chainLeft,
@@ -3461,10 +3596,13 @@ function renderCalendar() {
 function createMonthlyDayCell({
   dayNum,
   dateStr,
+  todayStr,
   dayLogs,
+  dayScheduled = [],
   dayRerolls,
   hasGoldStar,
   hasSilverStar,
+  hasBronzeStar,
   isFrozen,
   isStreakDay,
   chainLeft,
@@ -3497,8 +3635,8 @@ function createMonthlyDayCell({
     .filter(Boolean)
     .join(" ");
 
-  const visiblePills = dayLogs.slice(0, maxPills);
-  const hiddenPills = dayLogs.slice(maxPills);
+  const visiblePills = dayScheduled.slice(0, maxPills);
+  const hiddenPills = dayScheduled.slice(maxPills);
   const extraCount = hiddenPills.length;
 
   cell.innerHTML = `
@@ -3507,8 +3645,9 @@ function createMonthlyDayCell({
       <span class="cal-day-badges">
         ${dayNote ? `<span class="cal-note-inline" aria-label="Daily note"><svg class="ui-icon" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></span>` : ""}
         ${isFrozen ? `<span class="cal-freeze-inline" aria-label="Streak Freeze used">❄️</span>` : ""}
-        ${hasGoldStar ? `<span class="cal-star-inline" aria-label="Gold Star: Daily Tasks and activity completed">★</span>` : ""}
-        ${hasSilverStar ? `<span class="cal-star-inline is-silver" aria-label="Silver Star: Daily Tasks completed">★</span>` : ""}
+        ${hasGoldStar ? `<span class="cal-star-inline" aria-label="Gold Star: Daily Tasks, Scheduled Tasks and activity completed">★</span>` : ""}
+        ${hasSilverStar ? `<span class="cal-star-inline is-silver" aria-label="Silver Star: Daily and Scheduled Tasks completed">★</span>` : ""}
+        ${hasBronzeStar ? `<span class="cal-star-inline is-bronze" aria-label="Bronze Star: Daily Tasks completed (scheduled tasks incomplete)">★</span>` : ""}
         ${dayRerolls > 0 ? `<span class="cal-reroll-inline">🎲${dayRerolls}</span>` : ""}
       </span>
     </div>
@@ -3543,9 +3682,11 @@ function createMonthlyDayCell({
     if (hasGoldStar) {
       const streakSuffix =
         isStreakDay && streakDayNum > 0 ? ` (🔥 Streak Day ${streakDayNum})` : "";
-      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-gold)">★</span><span>Gold Star: All Daily Tasks + Activity completed on ${escapeHtml(dateStr)}${escapeHtml(streakSuffix)}!</span></div>`;
+      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-gold)">★</span><span>Gold Star: All Daily Tasks + Scheduled Tasks + Activity completed on ${escapeHtml(dateStr)}${escapeHtml(streakSuffix)}!</span></div>`;
+    } else if (hasSilverStar) {
+      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-silver)">★</span><span>Silver Star: All Daily &amp; Scheduled Tasks completed on ${escapeHtml(dateStr)} (no activity logged)</span></div>`;
     } else {
-      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-silver)">★</span><span>Silver Star: All Daily Tasks completed on ${escapeHtml(dateStr)} (no activity logged)</span></div>`;
+      starTooltipHtml = `<div class="tooltip-item"><span style="color: var(--star-bronze)">★</span><span>Bronze Star: Daily Tasks completed on ${escapeHtml(dateStr)} (scheduled tasks incomplete)</span></div>`;
     }
     starEl.addEventListener("mouseenter", (e) => showCalendarTooltip(starTooltipHtml, e));
     starEl.addEventListener("mousemove", (e) => positionCalendarTooltip(e));
@@ -3563,20 +3704,40 @@ function createMonthlyDayCell({
 
   const pillsContainer = cell.querySelector(".cal-pills");
 
-  // Render visible colored activity text pills with instant full-text hover tooltip
-  visiblePills.forEach((l) => {
-    const pillColor = getListColor(l.listId, l.color || PALETTE[0]);
+  const getScheduledPillMeta = (task) => {
+    const isDone = isScheduledTaskDoneOnCalendarDate(task, dateStr);
+    const isOverdue = task.type === "once" && dateStr < todayStr && !isDone;
+    const pillColor = isDone
+      ? "var(--success)"
+      : isOverdue
+        ? "var(--danger)"
+        : task.type === "repeat"
+          ? "var(--accent-secondary, var(--accent-primary))"
+          : "var(--accent-primary)";
+    const statusLabel = isDone
+      ? "Completed"
+      : isOverdue
+        ? "Overdue"
+        : task.type === "repeat"
+          ? "Repeating task"
+          : "Scheduled task";
+    return { isDone, isOverdue, pillColor, statusLabel };
+  };
+
+  // Render visible scheduled task pills with instant full-text hover tooltip
+  visiblePills.forEach((task) => {
+    const { isDone, isOverdue, pillColor, statusLabel } = getScheduledPillMeta(task);
     const pill = document.createElement("div");
-    pill.className = "cal-pill";
+    pill.className = `cal-pill ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}`.trim();
     pill.style.borderLeftColor = pillColor;
-    pill.textContent = l.itemTitle;
+    pill.textContent = isDone ? `✓ ${task.title}` : task.title;
 
     const tooltipHtml = `
       <div class="tooltip-item">
         <span class="color-dot" style="background-color: ${pillColor}"></span>
         <div>
-          <div>${escapeHtml(l.itemTitle)}</div>
-          ${l.listName ? `<div class="tooltip-item-sub">${escapeHtml(l.listName)}</div>` : ""}
+          <div>${escapeHtml(task.title)}</div>
+          <div class="tooltip-item-sub">${statusLabel}</div>
         </div>
       </div>
     `;
@@ -3588,7 +3749,7 @@ function createMonthlyDayCell({
     pillsContainer.appendChild(pill);
   });
 
-  // Render "+N more" with instant hover tooltip showing the hidden activities
+  // Render "+N more" with instant hover tooltip showing the hidden scheduled tasks
   if (extraCount > 0) {
     const moreEl = document.createElement("div");
     moreEl.className = "cal-more";
@@ -3598,17 +3759,18 @@ function createMonthlyDayCell({
       <div class="tooltip-header">${extraCount} more on ${escapeHtml(dateStr)}</div>
       <ul class="tooltip-list">
         ${hiddenPills
-          .map(
-            (l) => `
+          .map((task) => {
+            const { isDone, pillColor, statusLabel } = getScheduledPillMeta(task);
+            return `
           <li class="tooltip-item">
-            <span class="color-dot" style="background-color: ${getListColor(l.listId, l.color || PALETTE[0])}"></span>
+            <span class="color-dot" style="background-color: ${pillColor}"></span>
             <div>
-              <div>${escapeHtml(l.itemTitle)}</div>
-              ${l.listName ? `<div class="tooltip-item-sub">${escapeHtml(l.listName)}</div>` : ""}
+              <div>${isDone ? "✓ " : ""}${escapeHtml(task.title)}</div>
+              <div class="tooltip-item-sub">${statusLabel}</div>
             </div>
           </li>
-        `
-          )
+        `;
+          })
           .join("")}
       </ul>
     `;
@@ -3649,7 +3811,7 @@ function renderDayInspector() {
 
   const dayLogs = state.logs.filter((l) => l.date === selectedDateStr);
   const dayRerolls = Number(state.rerollsByDate[selectedDateStr]) || 0;
-  const { scheduledDone, hasGoldStar, hasSilverStar } = getStarStatusForDate(
+  const { scheduledDone, hasGoldStar, hasSilverStar, hasBronzeStar } = getStarStatusForDate(
     selectedDateStr,
     dayLogs.length > 0
   );
@@ -3665,21 +3827,22 @@ function renderDayInspector() {
   rerollBadgeEl.textContent = `🎲 ${dayRerolls} re-roll${dayRerolls === 1 ? "" : "s"}`;
   rerollBadgeEl.classList.toggle("badge-reroll", dayRerolls > 0);
 
-  // Star badge (Gold if Daily Tasks + Activity, Silver if only Daily Tasks)
+  // Star badge (Gold if Daily + Scheduled + Activity, Silver if Daily + Scheduled, Bronze if only Daily)
   const starBadgeEl = document.getElementById("inspector-star-badge");
   if (starBadgeEl) {
-    starBadgeEl.classList.toggle("hidden", !hasGoldStar && !hasSilverStar);
+    starBadgeEl.classList.toggle("hidden", !hasGoldStar && !hasSilverStar && !hasBronzeStar);
     starBadgeEl.classList.toggle("badge-star", hasGoldStar);
     starBadgeEl.classList.toggle("badge-star-silver", hasSilverStar);
+    starBadgeEl.classList.toggle("badge-star-bronze", hasBronzeStar);
     if (hasGoldStar) {
       starBadgeEl.textContent = "★ Gold Star";
       starBadgeEl.title = "All Daily Tasks, Scheduled Tasks + at least 1 Activity were completed on this date!";
     } else if (hasSilverStar) {
       starBadgeEl.textContent = "★ Silver Star";
-      starBadgeEl.title =
-        dayLogs.length > 0 && !scheduledDone
-          ? "All Daily Tasks were completed, but To-Do & Schedule tasks for this date were incomplete."
-          : "All Daily Tasks were completed on this date (no activities logged).";
+      starBadgeEl.title = "All Daily Tasks & Scheduled Tasks were completed on this date (no activities logged).";
+    } else if (hasBronzeStar) {
+      starBadgeEl.textContent = "★ Bronze Star";
+      starBadgeEl.title = "All Daily Tasks were completed, but To-Do & Schedule tasks for this date were incomplete.";
     }
   }
 
@@ -3730,6 +3893,7 @@ function renderDayInspector() {
       `;
 
       li.querySelector("button").addEventListener("click", () => {
+        const logSnapshot = { ...log };
         recordDeletedIds(log.id);
         state.logs = state.logs.filter((l) => l.id !== log.id);
         if (log.date === todayStr) {
@@ -3737,6 +3901,20 @@ function renderDayInspector() {
         }
         saveState();
         renderAll();
+        showToast(`Removed "${log.itemTitle}" from ${log.date}`, {
+          actionLabel: "Undo",
+          onAction: () => {
+            clearDeletedIds(logSnapshot.id);
+            if (!state.logs.some((l) => l.id === logSnapshot.id)) {
+              state.logs.push(logSnapshot);
+            }
+            if (logSnapshot.date === getLogicalTodayStr()) {
+              evaluateTodayDailyStar(false);
+            }
+            saveState();
+            renderAll();
+          }
+        });
       });
 
       listEl.appendChild(li);
@@ -3844,6 +4022,44 @@ function renderStatsAndInsights() {
 
   document.getElementById("stat-week-count").textContent = String(weekCount);
   document.getElementById("stat-month-count").textContent = String(monthCount);
+
+  const starPillEl = document.getElementById("stat-pill-daily-star");
+  const starIconEl = document.getElementById("stat-daily-star-icon");
+  const starValueEl = document.getElementById("stat-daily-star-value");
+  const starSubEl = document.getElementById("stat-daily-star-sub");
+  if (starPillEl && starIconEl && starValueEl && starSubEl) {
+    const sp = getTodayStarProgress();
+    const dailyPart = sp.dailyTotal === 0 ? "○ Daily Tasks (none)" : `${sp.allDailyDone ? "✓" : "○"} Daily (${sp.dailyDone}/${sp.dailyTotal})`;
+    const activityPart = `${sp.hasActivityToday ? "✓" : "○"} 1+ Activity`;
+    const schedPart = sp.schedDue === 0 ? "✓ Scheduled (none due)" : `${sp.allSchedDone ? "✓" : "○"} Scheduled (${sp.schedDone}/${sp.schedDue})`;
+    const breakdown = `${dailyPart} • ${activityPart} • ${schedPart}`;
+
+    starPillEl.classList.toggle("is-gold", sp.starTier === "gold");
+    starPillEl.classList.toggle("is-silver", sp.starTier === "silver");
+    starPillEl.classList.toggle("is-bronze", sp.starTier === "bronze");
+    if (sp.starTier === "gold") {
+      starIconEl.textContent = "⭐";
+      starValueEl.textContent = "Gold";
+      starSubEl.textContent = "(Earned!)";
+      starPillEl.setAttribute("title", `Today's Gold Star earned! ${breakdown}`);
+    } else if (sp.starTier === "silver") {
+      starIconEl.textContent = "★";
+      starValueEl.textContent = "Silver";
+      starSubEl.textContent = "(Need 1+ activity)";
+      starPillEl.setAttribute("title", `Silver Star earned! For Gold: ${breakdown}`);
+    } else if (sp.starTier === "bronze") {
+      starIconEl.textContent = "★";
+      starValueEl.textContent = "Bronze";
+      starSubEl.textContent = "(Need scheduled)";
+      starPillEl.setAttribute("title", `Bronze Star earned! Finish today's scheduled tasks to upgrade: ${breakdown}`);
+    } else {
+      starIconEl.textContent = "☆";
+      starValueEl.textContent = `${sp.criteriaMet}/${sp.criteriaTotal}`;
+      starSubEl.textContent = "(To Gold)";
+      starPillEl.setAttribute("title", `Today's Gold Star (${sp.criteriaMet}/${sp.criteriaTotal}): ${breakdown}`);
+    }
+  }
+
   document.getElementById("total-alltime-count").textContent = `${state.logs.length} total`;
 
   const countsMap = new Map();
@@ -4362,25 +4578,17 @@ function bindDelegatedListContainers() {
       }
 
       if (e.target.closest(".add-procrast-subtask-btn")) {
-        openInputModal({
-          title: `Add Subtask to "${task.title}"`,
-          label: "Subtask Name",
-          initialValue: "",
-          placeholder: "e.g., Gather documents...",
-          onSave: (subTitle) => {
-            if (!Array.isArray(task.subtasks)) task.subtasks = [];
-            task.subtasks.push({
-              id: uid("sub"),
-              title: subTitle,
-              done: false
-            });
-            task.doneToday = false;
-            saveState();
-            renderProcrastinationList();
-            renderDecisionCard();
-            showToast(`Added subtask "${subTitle}"`);
-          }
-        });
+        inlineSubtaskTaskId = inlineSubtaskTaskId === task.id ? null : task.id;
+        renderProcrastinationList();
+        if (inlineSubtaskTaskId === task.id) {
+          const inputEl = procrastListEl.querySelector(
+            `.procrastination-item[data-procrast-id="${CSS.escape(task.id)}"] .inline-subtask-input`
+          );
+          if (inputEl) inputEl.focus();
+        }
+      } else if (e.target.closest(".cancel-inline-subtask-btn")) {
+        inlineSubtaskTaskId = null;
+        renderProcrastinationList();
       } else if (e.target.closest(".log-procrast-btn") || e.target.closest(".daily-task-title")) {
         if (isEditingProcrastination) return;
         checkAndPerformDailyReset(false);
@@ -4448,6 +4656,34 @@ function bindDelegatedListContainers() {
           }
         );
       }
+    });
+
+    procrastListEl.addEventListener("submit", (e) => {
+      const form = e.target.closest(".inline-subtask-add");
+      if (!form) return;
+      e.preventDefault();
+      const taskId = form.dataset.procrastId;
+      const task = (state.procrastinationTasks || []).find((t) => t.id === taskId);
+      const inputEl = form.querySelector(".inline-subtask-input");
+      const subTitle = inputEl ? inputEl.value.trim() : "";
+      if (!task || !subTitle) return;
+
+      if (!Array.isArray(task.subtasks)) task.subtasks = [];
+      task.subtasks.push({
+        id: uid("sub"),
+        title: subTitle,
+        done: false
+      });
+      task.doneToday = false;
+      saveState();
+      renderProcrastinationList();
+      renderDecisionCard();
+      showToast(`Added subtask "${subTitle}"`);
+
+      const nextInputEl = procrastListEl.querySelector(
+        `.procrastination-item[data-procrast-id="${CSS.escape(task.id)}"] .inline-subtask-input`
+      );
+      if (nextInputEl) nextInputEl.focus();
     });
 
     bindListDragReorder({
@@ -4695,26 +4931,108 @@ function initEvents() {
     }
   });
 
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      closeThemeDropdowns();
-      closeSettingsDropdown();
-      closeAccountDropdown();
-      closeAboutModal();
-      return;
-    }
-    if (e.code === "Space" && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const hasOpenModal = Boolean(document.querySelector(".modal-backdrop:not(.hidden)"));
-      const isInteractiveTarget = Boolean(
-        e.target && e.target.closest("input, textarea, select, button, a, [role='button'], [role='tab'], [contenteditable]")
-      );
-      if (!hasOpenModal && !isInteractiveTarget && !isRolling) {
-        e.preventDefault();
-        const isReRoll = Boolean(state.activeDecision);
-        triggerDecisionRoll(isReRoll);
+  // Interactive Hero Candidate Chips (click to exclude from roll with Undo)
+  const heroCandidatePillsEl = document.getElementById("hero-candidate-pills");
+  if (heroCandidatePillsEl) {
+    heroCandidatePillsEl.addEventListener("click", (e) => {
+      if (isRolling) return;
+      const chip = e.target.closest(".hero-candidate-chip.is-interactive");
+      if (!chip) return;
+      const itemId = chip.dataset.itemId;
+      const listId = chip.dataset.listId;
+      const targetList = state.lists.find((l) => l.id === listId);
+      const targetItem = targetList ? targetList.items.find((i) => i.id === itemId) : null;
+      if (!targetItem || !targetItem.checked) return;
+
+      targetItem.checked = false;
+      saveState();
+      renderActivityPool();
+      renderDecisionCard();
+
+      showToast(`Excluded "${targetItem.title}" from roll`, {
+        actionLabel: "Undo",
+        onAction: () => {
+          targetItem.checked = true;
+          saveState();
+          renderActivityPool();
+          renderDecisionCard();
+        }
+      });
+    });
+  }
+
+  // Inline Quick-Add Forms (Daily Checklist, Procrastination List, To-Do & Schedule)
+  const quickAddDailyForm = document.getElementById("form-quick-add-daily");
+  const quickAddDailyInput = document.getElementById("input-quick-add-daily");
+  if (quickAddDailyForm && quickAddDailyInput) {
+    quickAddDailyForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = quickAddDailyInput.value.trim();
+      if (!title) return;
+      state.dailyTasks.push({
+        id: uid("daily"),
+        title,
+        doneToday: false
+      });
+      quickAddDailyInput.value = "";
+      evaluateTodayDailyStar(true);
+      saveState();
+      renderAll();
+      showToast(`Added daily task "${title}"`);
+    });
+  }
+
+  const quickAddProcrastForm = document.getElementById("form-quick-add-procrastination");
+  const quickAddProcrastInput = document.getElementById("input-quick-add-procrastination");
+  if (quickAddProcrastForm && quickAddProcrastInput) {
+    quickAddProcrastForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = quickAddProcrastInput.value.trim();
+      if (!title) return;
+      if (!Array.isArray(state.procrastinationTasks)) {
+        state.procrastinationTasks = [];
       }
-    }
-  });
+      state.procrastinationTasks.push({
+        id: uid("proc"),
+        title,
+        doneToday: false,
+        subtasks: []
+      });
+      quickAddProcrastInput.value = "";
+      saveState();
+      renderProcrastinationList();
+      renderDecisionCard();
+      showToast(`Added "${title}" to Procrastination List`);
+    });
+  }
+
+  const quickAddSchedForm = document.getElementById("form-quick-add-scheduled");
+  const quickAddSchedInput = document.getElementById("input-quick-add-scheduled");
+  if (quickAddSchedForm && quickAddSchedInput) {
+    quickAddSchedForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const title = quickAddSchedInput.value.trim();
+      if (!title) return;
+      if (!Array.isArray(state.scheduledTasks)) {
+        state.scheduledTasks = [];
+      }
+      const todayStr = getLogicalTodayStr();
+      state.scheduledTasks.push({
+        id: uid("sched"),
+        title,
+        type: "once",
+        dueDate: todayStr,
+        completedDates: {},
+        createdAt: todayStr
+      });
+      scheduledViewMode = "today";
+      quickAddSchedInput.value = "";
+      evaluateTodayDailyStar(false);
+      saveState();
+      renderAll();
+      showToast(`Added "${title}" for Today`);
+    });
+  }
 
   // Sticky Mobile Bottom Navigation
   document.querySelectorAll(".mobile-nav-btn").forEach((btn) => {
@@ -4880,42 +5198,6 @@ function initEvents() {
     editProcrastinationBtn.addEventListener("click", () => {
       isEditingProcrastination = !isEditingProcrastination;
       renderProcrastinationList();
-    });
-  }
-
-  const addProcrastinationBtn = document.getElementById("btn-add-procrastination");
-  if (addProcrastinationBtn) {
-    addProcrastinationBtn.addEventListener("click", () => {
-      openInputModal({
-        title: "Add Procrastination Task",
-        label: "Task Name",
-        initialValue: "",
-        placeholder: "e.g., Clean out garage, File taxes, Fix squeaky door...",
-        saveLabel: "Add Task",
-        showSubtasksEditor: true,
-        showAddAnother: true,
-        onSave: (title, _color, _weight, subtasks = []) => {
-          checkAndPerformDailyReset(false);
-          if (!Array.isArray(state.procrastinationTasks)) state.procrastinationTasks = [];
-          const newTask = {
-            id: uid("procrast"),
-            title,
-            doneToday: false
-          };
-          if (Array.isArray(subtasks) && subtasks.length > 0) {
-            newTask.subtasks = subtasks.map((subTitle) => ({
-              id: uid("sub"),
-              title: subTitle,
-              done: false
-            }));
-          }
-          state.procrastinationTasks.push(newTask);
-          saveState();
-          trackAnalyticsEvent("procrastination_added");
-          renderAll();
-          showToast(`Added "${title}" to Procrastination List`);
-        }
-      });
     });
   }
 
@@ -5146,37 +5428,6 @@ function initEvents() {
     });
   }
 
-  // Add New Daily Task Modal Trigger
-  const addDailyBtn = document.getElementById("btn-add-daily");
-  if (addDailyBtn) {
-    addDailyBtn.addEventListener("click", () => {
-      openInputModal({
-        title: "Add Daily Task",
-        label: "Task Name",
-        placeholder: "e.g. Drink 2L water",
-        maxLength: 60,
-        saveLabel: "Add",
-        showAddAnother: true,
-        onSave: (title) => {
-          checkAndPerformDailyReset(false);
-          state.dailyTasks.push({
-            id: uid("daily"),
-            title,
-            doneToday: false
-          });
-          evaluateTodayDailyStar(false);
-          saveState();
-          trackAnalyticsEvent("daily_added");
-          renderDailyTasks();
-          renderCalendar();
-          renderDayInspector();
-          renderStatsAndInsights();
-          showToast(`Added daily task "${title}"`);
-        }
-      });
-    });
-  }
-
   // Quick-Log Drawer Toggle in Selected Date Inspector
   const quickLogDrawer = document.getElementById("quick-log-drawer");
   const toggleQuickLogBtn = document.getElementById("btn-toggle-quick-log");
@@ -5232,11 +5483,24 @@ function initEvents() {
     clearDailyNoteBtn.addEventListener("click", () => {
       if (dailyNoteInput) dailyNoteInput.value = "";
       if (state.dailyNotesByDate && state.dailyNotesByDate[selectedDateStr]) {
-        delete state.dailyNotesByDate[selectedDateStr];
+        const noteDate = selectedDateStr;
+        const prevNote = state.dailyNotesByDate[noteDate];
+        delete state.dailyNotesByDate[noteDate];
         saveState();
         renderCalendar();
         renderDayInspector();
-        showToast(`Cleared note for ${selectedDateStr}`);
+        showToast(`Cleared note for ${noteDate}`, {
+          actionLabel: "Undo",
+          onAction: () => {
+            if (!state.dailyNotesByDate || typeof state.dailyNotesByDate !== "object") {
+              state.dailyNotesByDate = {};
+            }
+            state.dailyNotesByDate[noteDate] = prevNote;
+            saveState();
+            renderCalendar();
+            renderDayInspector();
+          }
+        });
       }
     });
   }

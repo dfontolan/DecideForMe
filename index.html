@@ -63,6 +63,13 @@
             <span class="stat-label">This Month</span>
           </div>
         </div>
+        <div class="stat-pill" id="stat-pill-daily-star" title="Complete all Daily Tasks, today's Scheduled Tasks, and 1+ Activity to earn today's Gold Star">
+          <span class="stat-icon" id="stat-daily-star-icon" aria-hidden="true">☆</span>
+          <div>
+            <span class="stat-value" id="stat-daily-star-value">0/3</span>
+            <span class="stat-label">Today's Star <small id="stat-daily-star-sub">(In progress)</small></span>
+          </div>
+        </div>
       </div>
 
       <!-- Top Utility Actions (Install App, Cloud Account, Theme Picker, Settings Menu) -->
@@ -237,6 +244,10 @@
               <button type="button" class="btn btn-outline btn-xs card-header-uncollapsed-action" id="btn-new-list">
                 + New List
               </button>
+              <button type="button" class="btn btn-secondary btn-xs btn-edit-mode card-header-uncollapsed-action" id="btn-edit-activities" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete activities">
+                <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                <span id="btn-edit-activities-label">Edit</span>
+              </button>
               <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-activity-lists" aria-expanded="true" aria-controls="pool-card-body" title="Collapse Activity Lists" aria-label="Collapse Activity Lists">
                 <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </button>
@@ -269,10 +280,6 @@
                 <div class="pool-bulk-actions">
                   <button type="button" class="btn btn-primary btn-xs" id="btn-add-activity">+ Add New</button>
                   <button type="button" class="btn btn-ghost btn-xs" id="btn-toggle-check-all">Uncheck All</button>
-                  <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-activities" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete activities">
-                    <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                    <span id="btn-edit-activities-label">Edit</span>
-                  </button>
                 </div>
               </div>
 
@@ -289,6 +296,10 @@
         <div class="inspector-header">
           <span class="section-label" id="section-label-procrastination">Procrastination List</span>
           <div class="daily-header-actions">
+            <button type="button" class="btn btn-secondary btn-xs btn-edit-mode card-header-uncollapsed-action" id="btn-edit-procrastination" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete procrastination tasks">
+              <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              <span id="btn-edit-procrastination-label">Edit</span>
+            </button>
             <span class="badge" id="procrastination-count-badge">0 pending</span>
             <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-procrastination" aria-expanded="true" aria-controls="procrastination-card-body" title="Collapse Procrastination List" aria-label="Collapse Procrastination List">
               <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -298,16 +309,18 @@
 
         <div class="collapsible-card-body" id="procrastination-card-body">
           <div class="collapsible-card-inner">
-            <div class="daily-tasks-toolbar">
-              <p class="card-header-subtitle">List of things you keep putting off.</p>
-              <div class="header-task-actions">
-                <button type="button" class="btn btn-primary btn-xs" id="btn-add-procrastination">+ Add Task</button>
-                <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-procrastination" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete procrastination tasks">
-                  <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                  <span id="btn-edit-procrastination-label">Edit</span>
-                </button>
-              </div>
-            </div>
+            <p class="card-header-subtitle procrastination-subtitle">List of things you keep putting off.</p>
+            <form class="inline-quick-add" id="form-quick-add-procrastination">
+              <input
+                type="text"
+                id="input-quick-add-procrastination"
+                class="input-text inline-quick-add-input"
+                placeholder="Quick-add something you're putting off..."
+                maxlength="80"
+                aria-label="Quick-add procrastination task"
+              />
+              <button type="submit" class="btn btn-primary btn-xs inline-quick-add-btn" title="Add procrastination task">+</button>
+            </form>
             <ul class="procrastination-list" id="procrastination-list">
               <!-- Populated by app.js -->
             </ul>
@@ -325,6 +338,10 @@
             <span class="section-label" id="section-label-daily-tasks">Daily Checklist</span>
           </div>
           <div class="daily-header-actions">
+            <button type="button" class="btn btn-secondary btn-xs btn-edit-mode card-header-uncollapsed-action" id="btn-edit-daily" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete daily tasks">
+              <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              <span id="btn-edit-daily-label">Edit</span>
+            </button>
             <span class="badge" id="daily-tasks-progress-badge">0/0 done</span>
             <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-daily-tasks" aria-expanded="true" aria-controls="daily-tasks-card-body" title="Collapse Daily Tasks" aria-label="Collapse Daily Tasks">
               <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -334,15 +351,17 @@
 
         <div class="collapsible-card-body" id="daily-tasks-card-body">
           <div class="collapsible-card-inner">
-            <div class="daily-tasks-toolbar">
-              <div class="header-task-actions">
-                <button type="button" class="btn btn-primary btn-xs" id="btn-add-daily">+ Add Task</button>
-                <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-daily" aria-pressed="false" title="Toggle edit mode to reorder, rename, or delete daily tasks">
-                  <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                  <span id="btn-edit-daily-label">Edit</span>
-                </button>
-              </div>
-            </div>
+            <form class="inline-quick-add" id="form-quick-add-daily">
+              <input
+                type="text"
+                id="input-quick-add-daily"
+                class="input-text inline-quick-add-input"
+                placeholder="Quick-add daily task..."
+                maxlength="80"
+                aria-label="Quick-add daily task"
+              />
+              <button type="submit" class="btn btn-primary btn-xs inline-quick-add-btn" title="Add daily task">+</button>
+            </form>
             <ul class="daily-tasks-list" id="daily-tasks-list">
               <!-- Populated by app.js -->
             </ul>
@@ -355,6 +374,10 @@
         <div class="inspector-header">
           <span class="section-label" id="section-label-scheduled-tasks">To-Do &amp; Schedule</span>
           <div class="daily-header-actions">
+            <button type="button" class="btn btn-secondary btn-xs btn-edit-mode card-header-uncollapsed-action" id="btn-edit-scheduled" aria-pressed="false" title="Toggle edit mode to reorder, edit, or delete scheduled tasks">
+              <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              <span id="btn-edit-scheduled-label">Edit</span>
+            </button>
             <span class="badge" id="scheduled-tasks-progress-badge">0/0 done</span>
             <button type="button" class="btn-icon btn-collapse-toggle" id="btn-toggle-scheduled-tasks" aria-expanded="true" aria-controls="scheduled-tasks-card-body" title="Collapse To-Do &amp; Schedule" aria-label="Collapse To-Do &amp; Schedule">
               <svg class="icon-svg collapse-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -371,12 +394,19 @@
               </div>
               <div class="header-task-actions">
                 <button type="button" class="btn btn-primary btn-xs" id="btn-add-scheduled">+ Add Task</button>
-                <button type="button" class="btn btn-secondary btn-xs btn-edit-mode" id="btn-edit-scheduled" aria-pressed="false" title="Toggle edit mode to reorder, edit, or delete scheduled tasks">
-                  <svg class="icon-svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                  <span id="btn-edit-scheduled-label">Edit</span>
-                </button>
               </div>
             </div>
+            <form class="inline-quick-add" id="form-quick-add-scheduled">
+              <input
+                type="text"
+                id="input-quick-add-scheduled"
+                class="input-text inline-quick-add-input"
+                placeholder="Quick-add task for Today..."
+                maxlength="80"
+                aria-label="Quick-add scheduled task for Today"
+              />
+              <button type="submit" class="btn btn-primary btn-xs inline-quick-add-btn" title="Add task for Today">+</button>
+            </form>
             <ul class="scheduled-tasks-list" id="scheduled-tasks-list">
               <!-- Populated by app.js -->
             </ul>
@@ -583,8 +613,11 @@
         <svg class="ui-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"></circle><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor"></circle><circle cx="12" cy="12" r="1.2" fill="currentColor"></circle><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor"></circle><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"></circle></svg>
         <span>Decide</span>
       </button>
-      <button type="button" class="mobile-nav-btn" data-mobile-view="tasks" aria-pressed="false">
-        <svg class="ui-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+      <button type="button" class="mobile-nav-btn" id="mobile-nav-tasks-btn" data-mobile-view="tasks" aria-pressed="false" aria-label="Tasks">
+        <span class="mobile-nav-icon-wrap">
+          <svg class="ui-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          <span class="mobile-nav-overdue-dot hidden" id="mobile-nav-tasks-overdue-dot" aria-hidden="true"></span>
+        </span>
         <span>Tasks</span>
       </button>
       <button type="button" class="mobile-nav-btn" data-mobile-view="calendar" aria-pressed="false">
