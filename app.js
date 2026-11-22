@@ -206,6 +206,7 @@ let isEditingDailyTasks = false;
 let isEditingScheduledTasks = false;
 let isEditingProcrastination = false;
 let inlineSubtaskTaskId = null;
+let openCalendarPopoverDate = null;
 let scheduledViewMode = "today"; // "today" | "upcoming"
 let editingScheduledTaskId = null;
 
@@ -856,6 +857,99 @@ function hideCalendarTooltip() {
   if (tooltip) {
     tooltip.classList.add("hidden");
   }
+}
+
+function closeCalendarDayPopover() {
+  openCalendarPopoverDate = null;
+  const popover = document.getElementById("cal-day-popover");
+  if (!popover) return;
+  popover.classList.add("hidden");
+  popover.classList.remove("is-open");
+  popover.innerHTML = "";
+}
+
+function openCalendarDayPopover(dateStr, anchorEl = null) {
+  const popover = document.getElementById("cal-day-popover");
+  if (!popover) return;
+
+  const scheduledTasksList = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+  const dayScheduled = scheduledTasksList.filter((t) => shouldShowTaskOnCalendar(t, dateStr));
+  if (dayScheduled.length === 0) {
+    closeCalendarDayPopover();
+    return;
+  }
+
+  openCalendarPopoverDate = dateStr;
+  const todayStr = getLogicalTodayStr();
+  const dateObj = parseLocalDateStr(dateStr);
+  const dateLabel =
+    dateStr === todayStr
+      ? "Today"
+      : `${SHORT_MONTH_NAMES[dateObj.getMonth()]} ${dateObj.getDate()}, ${dateObj.getFullYear()}`;
+  const doneCount = dayScheduled.filter((t) => isScheduledTaskDoneOnCalendarDate(t, dateStr)).length;
+
+  popover.dataset.dateStr = dateStr;
+  popover.innerHTML = `
+    <div class="cal-popover-header">
+      <div class="cal-popover-title-group">
+        <strong class="cal-popover-date">${escapeHtml(dateLabel)}</strong>
+        <span class="badge ${doneCount === dayScheduled.length ? "badge-success" : ""}">${doneCount}/${dayScheduled.length} done</span>
+      </div>
+      <button type="button" class="btn-icon cal-popover-close-btn" title="Close" aria-label="Close scheduled tasks popover">✕</button>
+    </div>
+    <ul class="cal-popover-list">
+      ${dayScheduled
+        .map((task) => {
+          const isDone = isScheduledTaskDoneOnCalendarDate(task, dateStr);
+          const isOverdue = task.type === "once" && dateStr < todayStr && !isDone;
+          const typeLabel = task.type === "repeat" ? "Repeating" : isOverdue ? "Overdue" : "Scheduled";
+          return `
+            <li class="cal-popover-item ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}" data-sched-id="${escapeHtml(task.id)}">
+              <div class="cal-popover-item-info">
+                <span class="cal-popover-item-title">${escapeHtml(task.title)}</span>
+                <span class="cal-popover-item-meta">${typeLabel}</span>
+              </div>
+              <button
+                type="button"
+                class="btn-icon cal-popover-toggle-btn ${isDone ? "is-done" : ""}"
+                title="${isDone ? `Unmark '${escapeHtml(task.title)}'` : `Mark '${escapeHtml(task.title)}' as complete`}"
+                aria-pressed="${isDone ? "true" : "false"}"
+              >✓</button>
+            </li>
+          `;
+        })
+        .join("")}
+    </ul>
+  `;
+
+  popover.classList.remove("hidden");
+  popover.classList.remove("is-open");
+
+  const resolvedAnchor =
+    anchorEl ||
+    document.querySelector(`#calendar-grid [data-date-str="${CSS.escape(dateStr)}"]`);
+
+  if (resolvedAnchor) {
+    const anchorRect = resolvedAnchor.getBoundingClientRect();
+    const popRect = popover.getBoundingClientRect();
+    const margin = 10;
+
+    let left = anchorRect.left + anchorRect.width / 2 - popRect.width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - popRect.width - margin));
+
+    let top = anchorRect.bottom + 8;
+    if (top + popRect.height > window.innerHeight - margin) {
+      top = anchorRect.top - popRect.height - 8;
+    }
+    top = Math.max(margin, Math.min(top, window.innerHeight - popRect.height - margin));
+
+    popover.style.left = `${left}px`;
+    popover.style.top = `${top}px`;
+  }
+
+  requestAnimationFrame(() => {
+    popover.classList.add("is-open");
+  });
 }
 
 function setModalWeight(weight) {
@@ -3335,25 +3429,6 @@ function getAdjacentDateStr(dateStr, offsetDays) {
   return toLocalDateStr(d);
 }
 
-// Helper: Select a date and immediately open the Quick-Log Drawer for it
-function openQuickLogForDate(dateStr, cellYear, cellMonth) {
-  selectedDateStr = dateStr;
-  if (typeof cellYear === "number" && typeof cellMonth === "number") {
-    calYear = cellYear;
-    calMonth = cellMonth;
-  } else {
-    const d = parseLocalDateStr(dateStr);
-    calYear = d.getFullYear();
-    calMonth = d.getMonth();
-  }
-  renderAll();
-  const quickLogDrawer = document.getElementById("quick-log-drawer");
-  if (quickLogDrawer) {
-    quickLogDrawer.classList.remove("hidden");
-    quickLogDrawer.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-}
-
 // Render Calendar (Supports Monthly Grid, 7-Row Weekly Agenda, Streak Chain, Quick-Log & Daily Notes)
 function renderCalendar() {
   hideCalendarTooltip();
@@ -3422,6 +3497,7 @@ function renderCalendar() {
       const isSelected = dateStr === selectedDateStr;
 
       const row = document.createElement("div");
+      row.dataset.dateStr = dateStr;
       row.className = [
         "week-day-row",
         dayLogs.length > 0 ? "has-logs" : "",
@@ -3485,15 +3561,17 @@ function renderCalendar() {
       `;
 
       row.addEventListener("click", () => {
+        const shouldToggleClose = openCalendarPopoverDate === dateStr;
         selectedDateStr = dateStr;
         calYear = cellDate.getFullYear();
         calMonth = cellDate.getMonth();
         renderCalendar();
         renderDayInspector();
-      });
-
-      row.addEventListener("dblclick", () => {
-        openQuickLogForDate(dateStr, cellDate.getFullYear(), cellDate.getMonth());
+        if (dayScheduled.length > 0 && !shouldToggleClose) {
+          openCalendarDayPopover(dateStr);
+        } else {
+          closeCalendarDayPopover();
+        }
       });
 
       gridEl.appendChild(row);
@@ -3619,6 +3697,7 @@ function createMonthlyDayCell({
   cellMonth
 }) {
   const cell = document.createElement("div");
+  cell.dataset.dateStr = dateStr;
   cell.className = [
     "cal-day",
     dayLogs.length > 0 ? "has-logs" : "",
@@ -3783,15 +3862,17 @@ function createMonthlyDayCell({
   }
 
   cell.addEventListener("click", () => {
+    const shouldToggleClose = openCalendarPopoverDate === dateStr;
     selectedDateStr = dateStr;
     calYear = cellYear;
     calMonth = cellMonth;
     renderCalendar();
     renderDayInspector();
-  });
-
-  cell.addEventListener("dblclick", () => {
-    openQuickLogForDate(dateStr, cellYear, cellMonth);
+    if (dayScheduled.length > 0 && !shouldToggleClose) {
+      openCalendarDayPopover(dateStr);
+    } else {
+      closeCalendarDayPopover();
+    }
   });
 
   return cell;
@@ -3810,6 +3891,19 @@ function renderDayInspector() {
   }
 
   const dayLogs = state.logs.filter((l) => l.date === selectedDateStr);
+  const completedScheduledForDate = (Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [])
+    .filter((t) => isTaskDueOnDate(t, selectedDateStr) && isScheduledTaskDoneOnCalendarDate(t, selectedDateStr))
+    .map((t) => {
+      const doneInDate =
+        (t.completedAtByDate &&
+          (t.completedAtByDate[selectedDateStr] ||
+            (t.type === "once" ? Object.values(t.completedAtByDate).find(Boolean) : ""))) ||
+        (t.type === "once" && t.completedDates
+          ? Object.keys(t.completedDates).find((d) => t.completedDates[d])
+          : "") ||
+        selectedDateStr;
+      return { task: t, doneInDate };
+    });
   const dayRerolls = Number(state.rerollsByDate[selectedDateStr]) || 0;
   const { scheduledDone, hasGoldStar, hasSilverStar, hasBronzeStar } = getStarStatusForDate(
     selectedDateStr,
@@ -3817,10 +3911,11 @@ function renderDayInspector() {
   );
 
   // Completed badge: green when > 0, neutral when 0
+  const totalCompletedCount = dayLogs.length + completedScheduledForDate.length;
   const countBadgeEl = document.getElementById("inspector-count-badge");
   countBadgeEl.textContent =
-    dayLogs.length > 0 ? `✓ ${dayLogs.length} completed` : "0 completed";
-  countBadgeEl.classList.toggle("badge-success", dayLogs.length > 0);
+    totalCompletedCount > 0 ? `✓ ${totalCompletedCount} completed` : "0 completed";
+  countBadgeEl.classList.toggle("badge-success", totalCompletedCount > 0);
 
   // Re-roll badge: amber when > 0, neutral when 0
   const rerollBadgeEl = document.getElementById("inspector-reroll-badge");
@@ -3871,9 +3966,44 @@ function renderDayInspector() {
   const listEl = document.getElementById("day-log-list");
   listEl.innerHTML = "";
 
-  if (dayLogs.length === 0) {
+  if (dayLogs.length === 0 && completedScheduledForDate.length === 0) {
     listEl.innerHTML = `<li class="empty-state">No completed activities logged on this date yet. Click <strong>+ Log Activity</strong> above to add one!</li>`;
   } else {
+    completedScheduledForDate.forEach(({ task, doneInDate }) => {
+      const li = document.createElement("li");
+      li.className = "day-log-item is-scheduled-log";
+      const doneInNoteHtml =
+        doneInDate && doneInDate !== selectedDateStr
+          ? ` <span class="day-log-done-in-note">done in ${escapeHtml(doneInDate)}</span>`
+          : "";
+
+      li.innerHTML = `
+        <div class="day-log-left">
+          <span class="color-dot" style="background-color: var(--success)"></span>
+          <div>
+            <div><strong>${escapeHtml(task.title)}</strong>${doneInNoteHtml}</div>
+            <div class="day-log-meta">To-Do &amp; Schedule • ${task.type === "repeat" ? "Repeating" : "Scheduled"}</div>
+          </div>
+        </div>
+        <button type="button" class="btn-icon danger" title="Unmark scheduled task">${ICON_TRASH_SVG}</button>
+      `;
+
+      li.querySelector("button").addEventListener("click", () => {
+        if (task.type === "once") {
+          task.completedDates = {};
+          task.completedAtByDate = {};
+        } else {
+          if (task.completedDates) delete task.completedDates[selectedDateStr];
+          if (task.completedAtByDate) delete task.completedAtByDate[selectedDateStr];
+        }
+        evaluateTodayDailyStar(false);
+        saveState();
+        renderAll();
+      });
+
+      listEl.appendChild(li);
+    });
+
     dayLogs.forEach((log) => {
       const li = document.createElement("li");
       li.className = "day-log-item";
@@ -4404,11 +4534,16 @@ function bindDelegatedListContainers() {
         if (!task.completedDates || typeof task.completedDates !== "object") {
           task.completedDates = {};
         }
+        if (!task.completedAtByDate || typeof task.completedAtByDate !== "object") {
+          task.completedAtByDate = {};
+        }
         let markedDoneNow = false;
         if (task.completedDates[activeTargetDate]) {
           delete task.completedDates[activeTargetDate];
+          delete task.completedAtByDate[activeTargetDate];
         } else {
           task.completedDates[activeTargetDate] = true;
+          task.completedAtByDate[activeTargetDate] = currentToday;
           markedDoneNow = true;
           const targetEl = e.target.closest(".log-sched-btn") || li;
           spawnConfettiBurst(targetEl, "#eab308");
@@ -4929,7 +5064,71 @@ function initEvents() {
     if (!e.target.closest(".account-menu-wrap")) {
       closeAccountDropdown();
     }
+    if (
+      openCalendarPopoverDate &&
+      !e.target.closest("#cal-day-popover") &&
+      !e.target.closest("#calendar-grid .cal-day") &&
+      !e.target.closest("#calendar-grid .week-day-row")
+    ) {
+      closeCalendarDayPopover();
+    }
   });
+
+  // Calendar Day Popover (complete/unmark scheduled tasks directly from calendar)
+  const calDayPopoverEl = document.getElementById("cal-day-popover");
+  if (calDayPopoverEl) {
+    calDayPopoverEl.addEventListener("click", (e) => {
+      if (e.target.closest(".cal-popover-close-btn")) {
+        closeCalendarDayPopover();
+        return;
+      }
+      const toggleBtn = e.target.closest(".cal-popover-toggle-btn");
+      if (!toggleBtn) return;
+      const itemEl = toggleBtn.closest(".cal-popover-item");
+      const dateStr = calDayPopoverEl.dataset.dateStr;
+      if (!itemEl || !dateStr) return;
+
+      const tasks = Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [];
+      const task = tasks.find((t) => t.id === itemEl.dataset.schedId);
+      if (!task) return;
+
+      const prevStats = getStatsSnapshot();
+      const currentToday = getLogicalTodayStr();
+      if (!task.completedDates || typeof task.completedDates !== "object") {
+        task.completedDates = {};
+      }
+      if (!task.completedAtByDate || typeof task.completedAtByDate !== "object") {
+        task.completedAtByDate = {};
+      }
+      const currentlyDone = isScheduledTaskDoneOnCalendarDate(task, dateStr);
+      let markedDoneNow = false;
+      if (currentlyDone) {
+        if (task.type === "once") {
+          task.completedDates = {};
+          task.completedAtByDate = {};
+        } else {
+          delete task.completedDates[dateStr];
+          delete task.completedAtByDate[dateStr];
+        }
+      } else {
+        task.completedDates[dateStr] = true;
+        task.completedAtByDate[dateStr] = currentToday;
+        markedDoneNow = true;
+        spawnConfettiBurst(toggleBtn, "#eab308");
+      }
+
+      evaluateTodayDailyStar(false);
+      saveState();
+      if (markedDoneNow) {
+        trackAnalyticsEvent("todo_completed", {
+          is_scheduled_ahead: dateStr > getLogicalTodayStr()
+        });
+      }
+      renderAll();
+      animateStatBumps(prevStats);
+      openCalendarDayPopover(dateStr);
+    });
+  }
 
   // Interactive Hero Candidate Chips (click to exclude from roll with Undo)
   const heroCandidatePillsEl = document.getElementById("hero-candidate-pills");

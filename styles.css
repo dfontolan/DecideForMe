@@ -3081,6 +3081,122 @@ body {
   color: var(--text-primary);
 }
 
+.cal-day-popover {
+  position: fixed;
+  z-index: 260;
+  width: min(300px, calc(100vw - 20px));
+  background: var(--bg-card-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+  color: var(--text-primary);
+  opacity: 0;
+  transform: translateY(6px) scale(0.97);
+  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cal-day-popover.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.cal-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cal-popover-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cal-popover-date {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-popover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.cal-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+}
+
+.cal-popover-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cal-popover-item-title {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.cal-popover-item-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.cal-popover-item.is-done .cal-popover-item-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.cal-popover-item.is-overdue .cal-popover-item-meta {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.cal-popover-toggle-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.cal-popover-toggle-btn:hover {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.cal-popover-toggle-btn.is-done {
+  background: var(--success);
+  border-color: var(--success);
+  color: #ffffff;
+}
+
 .tooltip-header {
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -3480,6 +3596,18 @@ body {
 .day-log-meta {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+.day-log-done-in-note {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--success-bg);
+  color: var(--success);
+  vertical-align: middle;
 }
 
 /* Top Activities Breakdown */
