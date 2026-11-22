@@ -4038,7 +4038,7 @@ function renderDayInspector() {
 
   const dayLogs = state.logs.filter((l) => l.date === selectedDateStr);
   const completedScheduledForDate = (Array.isArray(state.scheduledTasks) ? state.scheduledTasks : [])
-    .filter((t) => isTaskDueOnDate(t, selectedDateStr) && isScheduledTaskDoneOnCalendarDate(t, selectedDateStr))
+    .filter((t) => shouldShowTaskOnCalendar(t, selectedDateStr) && isScheduledTaskDoneOnCalendarDate(t, selectedDateStr))
     .map((t) => {
       const doneInDate =
         (t.completedAtByDate &&
