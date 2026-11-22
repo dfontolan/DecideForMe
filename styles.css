@@ -311,6 +311,103 @@
   color: var(--star-gold);
 }
 
+/* Sex and the City — Carrie's Column (Light Editorial Ivory & Blush) */
+[data-theme="satc"] {
+  --bg-page: #fbf7f4;
+  --bg-card: #ffffff;
+  --bg-card-elevated: #fff9f7;
+  --bg-input: #f6eff0;
+  --bg-hover: #f5e6eb;
+  --border-color: #e6d2d8;
+  --border-subtle: #efe1e5;
+
+  --text-primary: #1c1318;
+  --text-secondary: #4a3540;
+  --text-muted: #7d6170;
+
+  --accent-primary: #d6336c;
+  --accent-primary-hover: #be2459;
+  --accent-glow: rgba(214, 51, 108, 0.2);
+
+  --success: #0f8b64;
+  --success-hover: #0b6f50;
+  --success-bg: rgba(15, 139, 100, 0.12);
+
+  --warning: #b45309;
+  --warning-bg: rgba(217, 119, 6, 0.12);
+  --star-gold: #b8860b;
+  --star-bg: rgba(212, 168, 83, 0.16);
+  --star-silver: #64748b;
+  --star-silver-bg: rgba(100, 116, 139, 0.12);
+  --freeze-cyan: #0284c7;
+  --freeze-bg: rgba(2, 132, 199, 0.12);
+  --danger: #d9385a;
+  --danger-hover: #be123c;
+  --danger-bg: rgba(217, 56, 90, 0.11);
+
+  --shadow-card: 0 8px 24px -6px rgba(28, 19, 24, 0.08), 0 1px 3px rgba(28, 19, 24, 0.04);
+}
+
+[data-theme="satc"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 65% 45% at 12% 8%, rgba(214, 51, 108, 0.07), transparent 70%),
+    radial-gradient(ellipse 55% 40% at 88% 12%, rgba(212, 168, 83, 0.09), transparent 70%);
+}
+
+[data-theme="satc"] .app-shell {
+  position: relative;
+  z-index: 1;
+}
+
+[data-theme="satc"] .brand h1,
+[data-theme="satc"] .hero-title,
+[data-theme="satc"] .chosen-title,
+[data-theme="satc"] .badge-chosen {
+  font-family: Georgia, "Didot", "Bodoni MT", "Times New Roman", serif;
+  letter-spacing: 0.01em;
+}
+
+[data-theme="satc"] .decision-card {
+  border-color: rgba(214, 51, 108, 0.24);
+  box-shadow:
+    0 12px 30px -8px rgba(28, 19, 24, 0.1),
+    0 0 0 1px rgba(212, 168, 83, 0.18);
+}
+
+[data-theme="satc"] .btn-decide {
+  background: linear-gradient(135deg, #c2255c 0%, #e64980 100%);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(214, 51, 108, 0.28);
+}
+
+[data-theme="satc"] .btn-decide:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+[data-theme="satc"] .theme-quip {
+  background: rgba(214, 51, 108, 0.08);
+  border-color: rgba(214, 51, 108, 0.26);
+  color: #9c214c;
+}
+
+[data-theme="satc"] .toast {
+  background: #ffffff;
+  color: #1c1318;
+  border-color: #e6d2d8;
+  box-shadow: 0 10px 26px rgba(28, 19, 24, 0.14);
+}
+
+[data-theme="satc"] .mobile-bottom-nav {
+  background: rgba(255, 255, 255, 0.94);
+  border-top-color: #e6d2d8;
+}
+
 [data-theme="win95"] {
   --bg-page: #008080;
   --bg-card: #c0c0c0;
@@ -1220,6 +1317,12 @@ body {
   color: #000000;
   border-radius: 0;
   box-shadow: 3px 3px 0 #000000;
+}
+
+[data-theme="satc"] .theme-quip.is-jackpot-quip {
+  background: linear-gradient(135deg, rgba(214, 51, 108, 0.12), rgba(212, 168, 83, 0.16));
+  border-color: rgba(214, 51, 108, 0.45);
+  color: #8c1d45;
 }
 
 @keyframes lotteryJackpotPulse {

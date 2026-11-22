@@ -1082,6 +1082,31 @@ const WIN95_QUIPS = [
   "Press OK to acknowledge your fate."
 ];
 
+const SATC_HERO_PROMPTS = [
+  "I couldn't help but wonder... what should we do next?",
+  "The city is waiting. What's on the agenda?",
+  "What's the next chapter in today's column?",
+  "Shoes on, schedule open — what should we do?",
+  "Before the evening starts: what's the move?"
+];
+
+let satcHeroPromptIndex = Math.floor(Math.random() * SATC_HERO_PROMPTS.length);
+
+function getSatcHeroTitle() {
+  return SATC_HERO_PROMPTS[satcHeroPromptIndex % SATC_HERO_PROMPTS.length];
+}
+
+const SATC_QUIPS = [
+  "I couldn't help but wonder... maybe this is exactly what today called for.",
+  "Consider this your main-character moment for the afternoon.",
+  "Even Miranda would approve of checking this one off.",
+  "Charlotte already would've penciled this into her planner.",
+  "Samantha's rule: stop debating and just go for it.",
+  "A little bit of discipline, a little bit of Manhattan.",
+  "Note to self: some decisions are better made without overthinking.",
+  "Worth every minute—like finding a cab in the rain."
+];
+
 const DARK_PROCRASTINATION_JACKPOT_QUIPS = [
   "🎰 JACKPOT! You beat 99-to-1 odds! Congratulations on your incredible luck—your grand prize is doing the thing you've been avoiding.",
   "🎉 1% LOTTERY WINNER! Out of all the fun things you could've rolled, you hit the rarest ticket in the house. Time to tackle what you didn't want to do!",
@@ -1110,8 +1135,14 @@ const WIN95_PROCRASTINATION_JACKPOT_QUIPS = [
   "🏆 0x000001% CRITICAL LUCKY OPERATION! Clippy is throwing confetti! Your reward for beating 99-to-1 odds is doing the task you've been putting off."
 ];
 
+const SATC_PROCRASTINATION_JACKPOT_QUIPS = [
+  "👠 1% JACKPOT! Against 99-to-1 odds, fate just left a Post-it: time to tackle the one task you've been avoiding.",
+  "🍸 1% RARE TWIST! You beat 100-to-1 odds—consider this your sign to finally cross off what you've been putting off.",
+  "✨ 1% COLUMN PLOT TWIST! Lucky you—today's grand prize is conquering the errand you kept leaving for later."
+];
+
 function normalizeTheme(theme) {
-  if (theme === "astrology" || theme === "tarot" || theme === "win95") return theme;
+  if (theme === "astrology" || theme === "tarot" || theme === "win95" || theme === "satc") return theme;
   return "dark";
 }
 
@@ -1125,6 +1156,10 @@ function isTarotTheme() {
 
 function isWin95Theme() {
   return state.theme === "win95";
+}
+
+function isSatcTheme() {
+  return state.theme === "satc";
 }
 
 function pickSeededQuip(decision, quips) {
@@ -1141,6 +1176,7 @@ function getProcrastinationJackpotQuip(decision) {
   if (isAstrologyTheme()) return pickSeededQuip(decision, ASTROLOGY_PROCRASTINATION_JACKPOT_QUIPS);
   if (isTarotTheme()) return pickSeededQuip(decision, TAROT_PROCRASTINATION_JACKPOT_QUIPS);
   if (isWin95Theme()) return pickSeededQuip(decision, WIN95_PROCRASTINATION_JACKPOT_QUIPS);
+  if (isSatcTheme()) return pickSeededQuip(decision, SATC_PROCRASTINATION_JACKPOT_QUIPS);
   return pickSeededQuip(decision, DARK_PROCRASTINATION_JACKPOT_QUIPS);
 }
 
@@ -1151,6 +1187,7 @@ function getThemeQuip(decision) {
   if (isAstrologyTheme()) return pickSeededQuip(decision, ASTROLOGY_QUIPS);
   if (isTarotTheme()) return pickSeededQuip(decision, TAROT_QUIPS);
   if (isWin95Theme()) return pickSeededQuip(decision, WIN95_QUIPS);
+  if (isSatcTheme()) return pickSeededQuip(decision, SATC_QUIPS);
   return "";
 }
 
@@ -1158,6 +1195,7 @@ function applyThemeCopy() {
   const astro = isAstrologyTheme();
   const tarot = isTarotTheme();
   const win95 = isWin95Theme();
+  const satc = isSatcTheme();
 
   const brandSubtitle = document.querySelector(".brand-subtitle");
   if (brandSubtitle) {
@@ -1167,7 +1205,9 @@ function applyThemeCopy() {
         ? "Shuffle the deck. Let the cards decide."
         : win95
           ? "DecideForMe.exe — Check what you're up for, and click Run."
-          : "Check what you're up for, and roll the dice.";
+          : satc
+            ? "I couldn't help but wonder... what should we do today?"
+            : "Check what you're up for, and roll the dice.";
   }
 
   const heroIdleTitle = document.getElementById("hero-idle-title");
@@ -1178,12 +1218,14 @@ function applyThemeCopy() {
         ? getTarotHeroTitle()
         : win95
           ? getWin95HeroTitle()
-          : "What should we do next?";
+          : satc
+            ? getSatcHeroTitle()
+            : "What should we do next?";
   }
 
   const decideDiceIcon = document.getElementById("decide-dice-icon");
   if (decideDiceIcon) {
-    decideDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : win95 ? "💾" : "🎲";
+    decideDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : win95 ? "💾" : satc ? "🍸" : "🎲";
   }
 
   const decideLabel = document.getElementById("btn-decide-label");
@@ -1199,7 +1241,7 @@ function applyThemeCopy() {
 
   const rollingDiceIcon = document.getElementById("rolling-dice-icon");
   if (rollingDiceIcon) {
-    rollingDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : win95 ? "⌛" : "🎲";
+    rollingDiceIcon.textContent = astro ? "🔮" : tarot ? "🃏" : win95 ? "⌛" : satc ? "🍸" : "🎲";
   }
 
   const rollingLabelText = document.getElementById("rolling-label-text");
@@ -1210,7 +1252,9 @@ function applyThemeCopy() {
         ? "Shuffling the Major Arcana..."
         : win95
           ? "Searching C:\\ACTIVITIES\\POOL..."
-          : "Rolling your checked pool...";
+          : satc
+            ? "Checking the city's agenda..."
+            : "Rolling your checked pool...";
   }
 
   const rerollLabel = document.getElementById("btn-reroll-label");
@@ -1221,7 +1265,9 @@ function applyThemeCopy() {
         ? "🃏 Draw Another (Re-roll)"
         : win95
           ? "🎲 Retry (Re-roll)"
-          : "🎲 Re-roll";
+          : satc
+            ? "🍸 Re-roll"
+            : "🎲 Re-roll";
   }
 
   const sectionLabels = [
@@ -1248,7 +1294,9 @@ function applyTheme() {
         ? { icon: "🃏", label: "Tarot Theme", metaColor: "#12090d" }
         : state.theme === "win95"
           ? { icon: "🖥️", label: "Windows 95", metaColor: "#008080" }
-          : { icon: "🌙", label: "Dark Theme", metaColor: "#0f1117" };
+          : state.theme === "satc"
+            ? { icon: "👠", label: "Sex and the City", metaColor: "#fbf7f4" }
+            : { icon: "🌙", label: "Dark Theme", metaColor: "#0f1117" };
   const icon = document.getElementById("theme-icon");
   if (icon) {
     icon.textContent = currentThemeMeta.icon;
