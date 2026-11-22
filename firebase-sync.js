@@ -7,6 +7,7 @@ import {
   GoogleAuthProvider,
   EmailAuthProvider,
   onAuthStateChanged,
+  signInAnonymously,
   signInWithPopup,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -295,11 +296,17 @@ function updateAccountUI(user) {
   if (!user || accountType === "guest") {
     if (labelEl) labelEl.textContent = "Guest";
     if (titleEl) titleEl.textContent = "Guest Mode";
-    if (subtitleEl) subtitleEl.textContent = "Sign in to sync across devices";
+    if (subtitleEl) {
+      subtitleEl.textContent = user
+        ? "Backed up in cloud • Sign in to sync across devices"
+        : "Sign in to sync across devices";
+    }
     if (googleBtn) googleBtn.classList.remove("hidden");
     if (usernameBtn) usernameBtn.classList.remove("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
-    setSyncStatus("offline", "Local only");
+    if (!user) {
+      setSyncStatus("offline", "Connecting...");
+    }
     return;
   }
 
@@ -511,7 +518,7 @@ function mergeLocalAndCloudState(localState, cloudState, preferLocal = false) {
 }
 
 async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false) {
-  if (!user || user.isAnonymous) return;
+  if (!user) return;
   const sanitized = sanitizeCloudState(stateObj);
   const json = JSON.stringify(sanitized);
   if (json === lastSyncedJson && !forceMetadataUpdate) {
@@ -545,7 +552,7 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
 }
 
 function scheduleSave(stateObj) {
-  if (!currentUser || currentUser.isAnonymous) return;
+  if (!currentUser) return;
   const sanitized = sanitizeCloudState(stateObj);
   if (JSON.stringify(sanitized) === lastSyncedJson && !pendingState) {
     return;
@@ -567,13 +574,13 @@ function flushSave() {
   if (activeFlushPromise) {
     return activeFlushPromise;
   }
-  if (!currentUser || currentUser.isAnonymous || !pendingState) {
+  if (!currentUser || !pendingState) {
     return Promise.resolve();
   }
 
   activeFlushPromise = (async () => {
     try {
-      while (currentUser && !currentUser.isAnonymous && pendingState) {
+      while (currentUser && pendingState) {
         if (saveTimer) {
           clearTimeout(saveTimer);
           saveTimer = null;
@@ -664,7 +671,7 @@ async function attachUserSync(user) {
     unsubscribeDoc = null;
   }
 
-  if (!user || user.isAnonymous) {
+  if (!user) {
     setSyncStatus("offline", "Local only");
     return;
   }
@@ -966,7 +973,7 @@ async function deleteAccount() {
 }
 
 onAuthStateChanged(auth, async (user) => {
-  if (!user || user.isAnonymous) {
+  if (!user) {
     attachGeneration++;
     currentUser = null;
     syncAnalyticsUser(null);
@@ -980,8 +987,11 @@ onAuthStateChanged(auth, async (user) => {
       unsubscribeDoc();
       unsubscribeDoc = null;
     }
-    if (user && user.isAnonymous) {
-      firebaseSignOut(auth).catch(() => {});
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      console.warn("Anonymous guest sign-in failed:", err);
+      setSyncStatus("offline", "Local only");
     }
     return;
   }
@@ -1004,7 +1014,7 @@ window.addEventListener("beforeunload", () => {
 
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!currentUser || currentUser.isAnonymous) return;
+    if (!currentUser) return;
     if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
     const state = window.DecideForMeApp?.getState();
     if (!state) return;
