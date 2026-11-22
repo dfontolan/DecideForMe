@@ -902,12 +902,17 @@ function openCalendarDayPopover(dateStr, anchorEl = null) {
         .map((task) => {
           const isDone = isScheduledTaskDoneOnCalendarDate(task, dateStr);
           const isOverdue = task.type === "once" && dateStr < todayStr && !isDone;
-          const typeLabel = task.type === "repeat" ? "Repeating" : isOverdue ? "Overdue" : "Scheduled";
+          const typeLabel =
+            task.type === "repeat"
+              ? formatScheduledTaskMeta(task, todayStr).label
+              : isOverdue
+                ? "Overdue"
+                : "Scheduled";
           return `
             <li class="cal-popover-item ${isDone ? "is-done" : ""} ${isOverdue ? "is-overdue" : ""}" data-sched-id="${escapeHtml(task.id)}">
               <div class="cal-popover-item-info">
                 <span class="cal-popover-item-title">${escapeHtml(task.title)}</span>
-                <span class="cal-popover-item-meta">${typeLabel}</span>
+                <span class="cal-popover-item-meta">${escapeHtml(typeLabel)}</span>
               </div>
               <button
                 type="button"
@@ -4067,12 +4072,15 @@ function renderDayInspector() {
           ? ` <span class="day-log-done-in-note">done in ${escapeHtml(doneInDate)}</span>`
           : "";
 
+      const scheduleMetaLabel =
+        task.type === "repeat" ? formatScheduledTaskMeta(task, todayStr).label : "Scheduled";
+
       li.innerHTML = `
         <div class="day-log-left">
           <span class="color-dot" style="background-color: var(--success)"></span>
           <div>
             <div><strong>${escapeHtml(task.title)}</strong>${doneInNoteHtml}</div>
-            <div class="day-log-meta">To-Do &amp; Schedule • ${task.type === "repeat" ? "Repeating" : "Scheduled"}</div>
+            <div class="day-log-meta">To-Do &amp; Schedule • ${escapeHtml(scheduleMetaLabel)}</div>
           </div>
         </div>
         <button type="button" class="btn-icon danger" title="Unmark scheduled task">${ICON_TRASH_SVG}</button>
