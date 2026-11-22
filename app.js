@@ -3560,7 +3560,8 @@ function renderCalendar() {
         </div>
       `;
 
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (e) => {
+        e._keepCalendarPopover = true;
         const shouldToggleClose = openCalendarPopoverDate === dateStr;
         selectedDateStr = dateStr;
         calYear = cellDate.getFullYear();
@@ -3861,7 +3862,8 @@ function createMonthlyDayCell({
     pillsContainer.appendChild(moreEl);
   }
 
-  cell.addEventListener("click", () => {
+  cell.addEventListener("click", (e) => {
+    e._keepCalendarPopover = true;
     const shouldToggleClose = openCalendarPopoverDate === dateStr;
     selectedDateStr = dateStr;
     calYear = cellYear;
@@ -5065,6 +5067,7 @@ function initEvents() {
       closeAccountDropdown();
     }
     if (
+      !e._keepCalendarPopover &&
       openCalendarPopoverDate &&
       !e.target.closest("#cal-day-popover") &&
       !e.target.closest("#calendar-grid .cal-day") &&
@@ -5082,6 +5085,7 @@ function initEvents() {
         closeCalendarDayPopover();
         return;
       }
+      e._keepCalendarPopover = true;
       const toggleBtn = e.target.closest(".cal-popover-toggle-btn");
       if (!toggleBtn) return;
       const itemEl = toggleBtn.closest(".cal-popover-item");
