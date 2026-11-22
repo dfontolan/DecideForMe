@@ -23,7 +23,6 @@ import {
   persistentMultipleTabManager,
   doc,
   getDoc,
-  getDocFromServer,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -82,6 +81,23 @@ let lastSyncedJson = "";
 let pendingPreSignInLocalState = null;
 let isExplicitSignOut = false;
 let attachGeneration = 0;
+let guestSignInPromise = null;
+
+function ensureGuestAuth() {
+  if (currentUser || auth.currentUser) return Promise.resolve(currentUser || auth.currentUser);
+  if (guestSignInPromise) return guestSignInPromise;
+  guestSignInPromise = signInAnonymously(auth)
+    .then((cred) => cred.user)
+    .catch((err) => {
+      console.warn("Anonymous guest sign-in failed:", err);
+      setSyncStatus("offline", "Local only");
+      return null;
+    })
+    .finally(() => {
+      guestSignInPromise = null;
+    });
+  return guestSignInPromise;
+}
 
 function notifyToast(msg) {
   if (window.DecideForMeApp && typeof window.DecideForMeApp.showToast === "function") {
@@ -552,8 +568,14 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
 }
 
 function scheduleSave(stateObj) {
-  if (!currentUser) return;
   const sanitized = sanitizeCloudState(stateObj);
+  if (!currentUser) {
+    if (isUntouchedDefaultState(sanitized)) return;
+    pendingState = sanitized;
+    setSyncStatus("syncing");
+    ensureGuestAuth();
+    return;
+  }
   if (JSON.stringify(sanitized) === lastSyncedJson && !pendingState) {
     return;
   }
@@ -563,7 +585,7 @@ function scheduleSave(stateObj) {
   saveTimer = setTimeout(() => {
     saveTimer = null;
     flushSave();
-  }, 400);
+  }, 3000);
 }
 
 function flushSave() {
@@ -605,7 +627,7 @@ async function reconcileInitialSnapshot(user, snapshot, preSignInState) {
   const localLatest = preSignInState || window.DecideForMeApp?.getState();
 
   if (!snapshot.exists()) {
-    if (localLatest) {
+    if (localLatest && !(user.isAnonymous && isUntouchedDefaultState(localLatest))) {
       if (saveTimer) {
         clearTimeout(saveTimer);
         saveTimer = null;
@@ -682,33 +704,37 @@ async function attachUserSync(user) {
 
   setSyncStatus("syncing");
 
-  try {
-    // Ensure auth token is ready before Firestore opens its initial request/stream
-    await user.getIdToken().catch(() => {});
-    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-
-    let initialSnapshot = null;
-    try {
-      initialSnapshot = await getDocFromServer(userRef);
-    } catch (serverErr) {
-      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-      // Offline / unavailable fallback to local Firestore cache
-      initialSnapshot = await getDoc(userRef);
-    }
-
-    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-    await reconcileInitialSnapshot(user, initialSnapshot, preSignInState);
-  } catch (err) {
-    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-    console.warn("Initial Firestore sync error:", err);
-    setSyncStatus("error");
-  }
-
+  await user.getIdToken().catch(() => {});
   if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
 
+  if (user.isAnonymous) {
+    try {
+      const initialSnapshot = await getDoc(userRef);
+      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+      await reconcileInitialSnapshot(user, initialSnapshot, preSignInState);
+    } catch (err) {
+      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+      console.warn("Initial guest Firestore sync error:", err);
+      setSyncStatus("error");
+    }
+    return;
+  }
+
+  let isInitialSnapshot = true;
   unsubscribeDoc = onSnapshot(
     userRef,
     async (snapshot) => {
+      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        try {
+          await reconcileInitialSnapshot(user, snapshot, preSignInState);
+        } catch (err) {
+          console.warn("Initial Firestore sync error:", err);
+          setSyncStatus("error");
+        }
+        return;
+      }
       if (snapshot.metadata.hasPendingWrites) return;
       if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
       if (!snapshot.exists()) return;
@@ -987,10 +1013,10 @@ onAuthStateChanged(auth, async (user) => {
       unsubscribeDoc();
       unsubscribeDoc = null;
     }
-    try {
-      await signInAnonymously(auth);
-    } catch (err) {
-      console.warn("Anonymous guest sign-in failed:", err);
+    const localState = window.DecideForMeApp?.getState();
+    if (localState && !isUntouchedDefaultState(localState)) {
+      await ensureGuestAuth();
+    } else {
       setSyncStatus("offline", "Local only");
     }
     return;
