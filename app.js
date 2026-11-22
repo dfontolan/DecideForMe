@@ -1066,7 +1066,10 @@ function openInputModal({
   if (addAnotherBtn) addAnotherBtn.classList.toggle("hidden", !showAddAnother);
 
   pendingInputAction = onSave;
-  document.getElementById("modal-list").classList.remove("hidden");
+  const modalEl = document.getElementById("modal-list");
+  const isLargeModal = Boolean(showColorPicker || showWeightPicker || showSubtasksEditor);
+  modalEl.classList.toggle("modal-top", isLargeModal);
+  modalEl.classList.remove("hidden");
   inputEl.focus();
   inputEl.select();
 }
@@ -1077,7 +1080,9 @@ function closeInputModal() {
   const subInput = document.getElementById("input-modal-subtask");
   if (subInput) subInput.value = "";
   renderModalSubtasksList();
-  document.getElementById("modal-list").classList.add("hidden");
+  const modalEl = document.getElementById("modal-list");
+  modalEl.classList.add("hidden");
+  modalEl.classList.remove("modal-top");
 }
 
 // Confirmation Pop-up Modal
@@ -1766,12 +1771,15 @@ function renderListModalColorPicker() {
 // Render Draggable List Tabs
 function renderListTabs() {
   const tabsEl = document.getElementById("list-tabs");
+  tabsEl.classList.toggle("is-editing", isEditingActivities);
   tabsEl.innerHTML = "";
 
+  const canDelete = state.lists.length > 1;
+
   state.lists.forEach((list) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
+    const btn = document.createElement("div");
     btn.role = "tab";
+    btn.tabIndex = 0;
     btn.draggable = true;
     btn.dataset.listId = list.id;
     btn.ariaSelected = list.id === state.activeListId ? "true" : "false";
@@ -1781,15 +1789,100 @@ function renderListTabs() {
     btn.innerHTML = `
       <span class="drag-grip" title="Drag to reorder list" aria-hidden="true">⠿</span>
       <span class="color-dot list-tab-dot" style="background-color: ${listColor}"></span>
-      <span>${escapeHtml(list.name)}</span>
+      <span class="list-tab-name">${escapeHtml(list.name)}</span>
+      <span class="list-tab-actions">
+        <button
+          type="button"
+          class="btn-icon edit-list-btn"
+          title="Rename list"
+          aria-label="Rename ${escapeHtml(list.name)}"
+        >
+          ${ICON_EDIT_SVG}
+        </button>
+        <button
+          type="button"
+          class="btn-icon danger delete-list-btn"
+          title="Delete list"
+          aria-label="Delete ${escapeHtml(list.name)}"
+          ${canDelete ? "" : "disabled"}
+        >
+          ${ICON_TRASH_SVG}
+        </button>
+      </span>
     `;
 
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      if (e.target.closest(".list-tab-actions")) return;
       if (isRolling) return;
       state.activeListId = list.id;
       saveState();
       renderAll();
     });
+
+    btn.addEventListener("keydown", (e) => {
+      if (e.target !== btn) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (isRolling) return;
+        state.activeListId = list.id;
+        saveState();
+        renderAll();
+      }
+    });
+
+    const editBtn = btn.querySelector(".edit-list-btn");
+    if (editBtn) {
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openInputModal({
+          title: "Rename List",
+          label: "List Name",
+          initialValue: list.name,
+          placeholder: "Enter list name...",
+          showColorPicker: true,
+          initialColor: list.color || PALETTE[0],
+          onSave: (name, color) => {
+            list.name = name;
+            list.color = color;
+            if (state.activeDecision && state.activeDecision.listId === list.id) {
+              state.activeDecision.listName = name;
+            }
+            syncListColorReferences(list);
+            saveState();
+            renderAll();
+            showToast(`Updated list "${name}"`);
+          }
+        });
+      });
+    }
+
+    const deleteBtn = btn.querySelector(".delete-list-btn");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (state.lists.length <= 1) return;
+        openConfirmModal(
+          "Delete List",
+          `Are you sure you want to delete list "${list.name}" and its items? (Past calendar logs will be kept)`,
+          () => {
+            recordDeletedIds(
+              list.id,
+              ...(list.items || []).map((i) => i.id)
+            );
+            state.lists = state.lists.filter((l) => l.id !== list.id);
+            if (state.activeListId === list.id) {
+              state.activeListId = state.lists[0].id;
+            }
+            if (state.activeDecision && state.activeDecision.listId === list.id) {
+              state.activeDecision = null;
+            }
+            saveState();
+            renderAll();
+            showToast(`Deleted list "${list.name}"`);
+          }
+        );
+      });
+    }
 
     btn.addEventListener("dragstart", (e) => {
       draggedListId = list.id;
@@ -1851,11 +1944,6 @@ function renderListTabs() {
 
     tabsEl.appendChild(btn);
   });
-
-  const deleteBtn = document.getElementById("btn-delete-list");
-  if (deleteBtn) {
-    deleteBtn.disabled = state.lists.length <= 1;
-  }
 }
 
 // Render Decision Engine Card
@@ -2172,9 +2260,9 @@ function renderActivityPool() {
   const editActivitiesBtn = document.getElementById("btn-edit-activities");
   syncEditModeButton("btn-edit-activities", "btn-edit-activities-label", isEditingActivities);
 
-  const listManageActions = document.getElementById("list-manage-actions");
-  if (listManageActions) {
-    listManageActions.classList.toggle("hidden", !isEditingActivities);
+  const listTabsEl = document.getElementById("list-tabs");
+  if (listTabsEl) {
+    listTabsEl.classList.toggle("is-editing", isEditingActivities);
   }
 
   if (activeList.items.length === 0) {
@@ -5732,29 +5820,6 @@ function initEvents() {
     });
   });
 
-  document.getElementById("btn-rename-list").addEventListener("click", () => {
-    const activeList = getActiveList();
-    openInputModal({
-      title: "Rename List",
-      label: "List Name",
-      initialValue: activeList.name,
-      placeholder: "Enter list name...",
-      showColorPicker: true,
-      initialColor: activeList.color || PALETTE[0],
-      onSave: (name, color) => {
-        activeList.name = name;
-        activeList.color = color;
-        if (state.activeDecision && state.activeDecision.listId === activeList.id) {
-          state.activeDecision.listName = name;
-        }
-        syncListColorReferences(activeList);
-        saveState();
-        renderAll();
-        showToast(`Updated list "${name}"`);
-      }
-    });
-  });
-
   document.getElementById("btn-modal-cancel").addEventListener("click", closeInputModal);
 
   const modalWeightsGroup = document.getElementById("modal-list-weights");
@@ -5823,29 +5888,6 @@ function initEvents() {
       pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks);
     }
     closeInputModal();
-  });
-
-  document.getElementById("btn-delete-list").addEventListener("click", () => {
-    if (state.lists.length <= 1) return;
-    const activeList = getActiveList();
-    openConfirmModal(
-      "Delete List",
-      `Are you sure you want to delete list "${activeList.name}" and its items? (Past calendar logs will be kept)`,
-      () => {
-        recordDeletedIds(
-          activeList.id,
-          ...(activeList.items || []).map((i) => i.id)
-        );
-        state.lists = state.lists.filter((l) => l.id !== activeList.id);
-        state.activeListId = state.lists[0].id;
-        if (state.activeDecision && state.activeDecision.listId === activeList.id) {
-          state.activeDecision = null;
-        }
-        saveState();
-        renderAll();
-        showToast(`Deleted list "${activeList.name}"`);
-      }
-    );
   });
 
   // Calendar View Switcher (Month vs Week)
