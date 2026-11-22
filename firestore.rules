@@ -16,10 +16,12 @@ service cloud.firestore {
     //      - v: int (required, == 1) - encryption schema version
     //      - updatedAt: timestamp (required) - last sync timestamp
     //      - accountType: string (optional, 'guest' | 'google' | 'username') - authentication provider type
+    //      - swCacheVersion: string (optional, 1..64 bytes) - active service worker cache version
     //   2. Legacy plaintext state format (backwards compatibility):
     //      - state: map (required, max 50 top-level keys) - serialized DecideForMe app state
     //      - updatedAt: timestamp (required) - last sync timestamp
     //      - accountType: string (optional, 'guest' | 'google' | 'username') - authentication provider type
+    //      - swCacheVersion: string (optional, 1..64 bytes) - active service worker cache version
     //
     // ===============================================================
 
@@ -53,11 +55,12 @@ service cloud.firestore {
 
     function hasValidCommonUserFields(data) {
       return data.updatedAt is timestamp &&
-             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google', 'username']));
+             (!('accountType' in data) || (data.accountType is string && data.accountType in ['guest', 'google', 'username'])) &&
+             (!('swCacheVersion' in data) || (data.swCacheVersion is string && data.swCacheVersion.size() > 0 && data.swCacheVersion.size() <= 64));
     }
 
     function isValidEncryptedUserState(data) {
-      return hasOnlyAllowedFields(['payload', 'iv', 'v', 'updatedAt', 'accountType']) &&
+      return hasOnlyAllowedFields(['payload', 'iv', 'v', 'updatedAt', 'accountType', 'swCacheVersion']) &&
              hasRequiredFields(['payload', 'iv', 'v', 'updatedAt']) &&
              data.payload is string &&
              data.payload.size() > 0 &&
@@ -71,7 +74,7 @@ service cloud.firestore {
     }
 
     function isValidLegacyUserState(data) {
-      return hasOnlyAllowedFields(['state', 'updatedAt', 'accountType']) &&
+      return hasOnlyAllowedFields(['state', 'updatedAt', 'accountType', 'swCacheVersion']) &&
              hasRequiredFields(['state', 'updatedAt']) &&
              data.state is map &&
              data.state.keys().size() <= 50 &&

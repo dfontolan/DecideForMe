@@ -135,7 +135,26 @@ function sanitizeCloudState(obj) {
 
 const CRYPTO_PEPPER = "DecideForMe-Sync-v1-2026";
 const CRYPTO_VERSION = 1;
+const SW_CACHE_PREFIX = "decide-for-me-pwa-";
 const cryptoKeyCache = new Map();
+
+async function getActiveSwCacheVersion() {
+  if (typeof caches === "undefined") return null;
+  try {
+    const keys = await caches.keys();
+    const matching = keys.filter((key) => key.startsWith(SW_CACHE_PREFIX));
+    if (matching.length === 0) return null;
+    if (matching.length === 1) return matching[0];
+    matching.sort((a, b) => {
+      const numA = parseInt(a.replace(SW_CACHE_PREFIX, "").replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(b.replace(SW_CACHE_PREFIX, "").replace(/\D/g, ""), 10) || 0;
+      return numB - numA;
+    });
+    return matching[0];
+  } catch {
+    return null;
+  }
+}
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -503,12 +522,19 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
   lastSyncedJson = json;
   setSyncStatus("syncing");
   try {
-    const encrypted = await encryptStatePayload(user.uid, sanitized);
-    await setDoc(doc(db, "users", user.uid), {
+    const [encrypted, swCacheVersion] = await Promise.all([
+      encryptStatePayload(user.uid, sanitized),
+      getActiveSwCacheVersion()
+    ]);
+    const docData = {
       ...encrypted,
       accountType: getAccountType(user),
       updatedAt: serverTimestamp()
-    });
+    };
+    if (swCacheVersion) {
+      docData.swCacheVersion = swCacheVersion;
+    }
+    await setDoc(doc(db, "users", user.uid), docData);
     setSyncStatus("synced");
   } catch (err) {
     if (lastSyncedJson === json) {
@@ -586,10 +612,18 @@ async function reconcileInitialSnapshot(user, snapshot, preSignInState) {
   }
 
   const cloudData = snapshot.data();
-  const cloudState = await decryptCloudData(user.uid, cloudData);
+  const [cloudState, swCacheVersion] = await Promise.all([
+    decryptCloudData(user.uid, cloudData),
+    getActiveSwCacheVersion()
+  ]);
   const needsEncryptionUpgrade = Boolean(cloudData && !cloudData.payload && cloudData.state);
+  const needsSwVersionUpdate = Boolean(
+    swCacheVersion && cloudData?.swCacheVersion !== swCacheVersion
+  );
   const needsMetadataUpdate =
-    cloudData?.accountType !== getAccountType(user) || needsEncryptionUpgrade;
+    cloudData?.accountType !== getAccountType(user) ||
+    needsEncryptionUpgrade ||
+    needsSwVersionUpdate;
 
   if (!cloudState) {
     setSyncStatus("synced");
@@ -967,6 +1001,18 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("beforeunload", () => {
   flushSave();
 });
+
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!currentUser || currentUser.isAnonymous) return;
+    if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
+    const state = window.DecideForMeApp?.getState();
+    if (!state) return;
+    writeStateToFirestore(currentUser, state, true).catch((err) => {
+      console.warn("Failed to sync updated SW cache version:", err);
+    });
+  });
+}
 
 window.DecideForMeCloud = {
   scheduleSave,
