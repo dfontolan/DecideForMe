@@ -1097,14 +1097,14 @@ function getSatcHeroTitle() {
 }
 
 const SATC_QUIPS = [
-  "I couldn't help but wonder... maybe this is exactly what today called for.",
-  "Consider this your main-character moment for the afternoon.",
-  "Even Miranda would approve of checking this one off.",
-  "Charlotte already would've penciled this into her planner.",
-  "Samantha's rule: stop debating and just go for it.",
-  "A little bit of discipline, a little bit of Manhattan.",
-  "Note to self: some decisions are better made without overthinking.",
-  "Worth every minute—like finding a cab in the rain."
+  "I couldn't help but wonder... was I avoiding this, or was this avoiding me?",
+  "Carrie spent $40,000 on shoes instead of a down payment. You can handle this.",
+  "Miranda just sighed, checked her watch, and said 'obviously do this one.'",
+  "Charlotte has already color-coded, monogrammed, and thanked you for doing this.",
+  "Samantha says: 'Honey, life's too short to stare at a to-do list. Do it and get a drink.'",
+  "If Stanford can survive Carrie's monologues, you can survive this.",
+  "No, you don't need three brunches to dissect this choice. Just go.",
+  "Big finally committed to something—and it's you doing this right now."
 ];
 
 const DARK_PROCRASTINATION_JACKPOT_QUIPS = [
@@ -1136,7 +1136,7 @@ const WIN95_PROCRASTINATION_JACKPOT_QUIPS = [
 ];
 
 const SATC_PROCRASTINATION_JACKPOT_QUIPS = [
-  "👠 1% JACKPOT! Against 99-to-1 odds, fate just left a Post-it: time to tackle the one task you've been avoiding.",
+  "📝 1% POST-IT JACKPOT! 'I'm sorry. I can't. Don't hate me—you rolled the one task you've been avoiding.'",
   "🍸 1% RARE TWIST! You beat 100-to-1 odds—consider this your sign to finally cross off what you've been putting off.",
   "✨ 1% COLUMN PLOT TWIST! Lucky you—today's grand prize is conquering the errand you kept leaving for later."
 ];
