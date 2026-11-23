@@ -156,7 +156,8 @@ service cloud.firestore {
 
     // Friendships & pending friend requests
     match /friendships/{pairId} {
-      allow read: if isNonGuest() && (request.auth.uid in resource.data.users);
+      allow get: if isNonGuest() && (resource == null || (request.auth.uid in resource.data.users));
+      allow list: if isNonGuest() && (request.auth.uid in resource.data.users);
       allow create: if isNonGuest() &&
                        hasOnlyAllowedFields(['users', 'status', 'requestedBy', 'names', 'createdAt', 'updatedAt']) &&
                        hasRequiredFields(['users', 'status', 'requestedBy', 'names', 'createdAt', 'updatedAt']) &&
