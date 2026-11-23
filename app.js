@@ -6149,6 +6149,48 @@ function initEvents() {
 // PWA Service Worker & Install App Prompt
 let deferredInstallPrompt = null;
 let isCheckingForUpdates = false;
+const LAST_UPDATE_CHECK_KEY = "decideForMe_lastUpdateCheck_v1";
+const AUTO_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+let updatePromptShown = false;
+
+function promptAppUpdateReady() {
+  if (updatePromptShown) return;
+  updatePromptShown = true;
+  showToast("New version available", {
+    actionLabel: "Reload",
+    durationMs: 12000,
+    onAction: () => window.location.reload()
+  });
+}
+
+function recordLastUpdateCheck() {
+  try {
+    localStorage.setItem(LAST_UPDATE_CHECK_KEY, String(Date.now()));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+async function runBackgroundUpdateCheck(registration) {
+  if (!registration || !navigator.onLine || isCheckingForUpdates || updatePromptShown) return;
+  try {
+    const lastCheck = Number(localStorage.getItem(LAST_UPDATE_CHECK_KEY)) || 0;
+    if (Date.now() - lastCheck < AUTO_UPDATE_CHECK_INTERVAL_MS) return;
+  } catch {
+    // Proceed if localStorage is unavailable
+  }
+
+  recordLastUpdateCheck();
+  if (registration.waiting) {
+    promptAppUpdateReady();
+    return;
+  }
+  try {
+    await registration.update();
+  } catch {
+    // Silent background check; ignore transient network errors
+  }
+}
 
 async function checkForAppUpdates() {
   if (isCheckingForUpdates) return;
@@ -6164,6 +6206,7 @@ async function checkForAppUpdates() {
   }
 
   isCheckingForUpdates = true;
+  recordLastUpdateCheck();
   showToast("Checking for updates...");
 
   try {
@@ -6220,9 +6263,11 @@ async function checkForAppUpdates() {
         "./manifest.json"
       ];
 
+      const cacheBust = Date.now();
       const fetched = await Promise.all(
         coreAssets.map(async (url) => {
-          const res = await fetch(url, { cache: "no-store" });
+          const separator = url.includes("?") ? "&" : "?";
+          const res = await fetch(`${url}${separator}_ts=${cacheBust}`, { cache: "no-store" });
           if (!res.ok) {
             throw new Error(`Failed to fetch ${url}: ${res.status}`);
           }
@@ -6274,9 +6319,40 @@ async function checkForAppUpdates() {
 
 function initPwa() {
   if ("serviceWorker" in navigator) {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (hadController && !isCheckingForUpdates) {
+        promptAppUpdateReady();
+      }
+    });
+
     window.addEventListener("load", () => {
       navigator.serviceWorker
         .register("./sw.js", { updateViaCache: "none" })
+        .then((registration) => {
+          if (registration.waiting) {
+            promptAppUpdateReady();
+          }
+          registration.addEventListener("updatefound", () => {
+            const newWorker = registration.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener("statechange", () => {
+              if (
+                newWorker.state === "installed" &&
+                navigator.serviceWorker.controller &&
+                !isCheckingForUpdates
+              ) {
+                promptAppUpdateReady();
+              }
+            });
+          });
+          document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") {
+              runBackgroundUpdateCheck(registration);
+            }
+          });
+          runBackgroundUpdateCheck(registration);
+        })
         .catch((err) => {
           console.warn("Service worker registration skipped or failed:", err);
         });

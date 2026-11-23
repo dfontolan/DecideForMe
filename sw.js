@@ -2,7 +2,7 @@
  * DecideForMe — Offline-First Service Worker
  */
 
-const CACHE_NAME = "decide-for-me-pwa-v56";
+const CACHE_NAME = "decide-for-me-pwa-v58";
 const PRECACHE_ASSETS = [
   "./",
   "./index.html",
@@ -46,6 +46,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (request.cache === "no-store" || url.searchParams.has("_ts")) return;
 
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
