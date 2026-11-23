@@ -2840,7 +2840,7 @@ function setScheduledModalFreq(freq) {
   if (monthlyEl) monthlyEl.classList.toggle("hidden", !isMonthly);
 }
 
-function openScheduledTaskModal(existingTask = null) {
+function openScheduledTaskModal(existingTask = null, defaultDateStr = null) {
   const modal = document.getElementById("modal-scheduled-task");
   const titleHeading = document.getElementById("modal-scheduled-title");
   const titleInput = document.getElementById("input-scheduled-title");
@@ -2851,8 +2851,9 @@ function openScheduledTaskModal(existingTask = null) {
   if (!modal) return;
 
   const todayStr = getLogicalTodayStr();
-  const todayObj = getLogicalTodayDate();
-  const todayWeekday = (todayObj.getDay() + 6) % 7;
+  const targetDateStr = !existingTask && defaultDateStr ? defaultDateStr : todayStr;
+  const targetDateObj = !existingTask && defaultDateStr ? parseLocalDateStr(defaultDateStr) : getLogicalTodayDate();
+  const targetWeekday = (targetDateObj.getDay() + 6) % 7;
 
   editingScheduledTaskId = existingTask ? existingTask.id : null;
   if (titleHeading) titleHeading.textContent = existingTask ? "Edit Scheduled Task" : "Add Scheduled Task";
@@ -2864,7 +2865,7 @@ function openScheduledTaskModal(existingTask = null) {
   setScheduledModalType(type);
 
   if (dateInput) {
-    dateInput.value = (existingTask && existingTask.dueDate) || todayStr;
+    dateInput.value = (existingTask && existingTask.dueDate) || targetDateStr;
   }
 
   const rule = (existingTask && existingTask.repeatRule) || {};
@@ -2872,7 +2873,7 @@ function openScheduledTaskModal(existingTask = null) {
   setScheduledModalFreq(freq);
 
   const selectedWeekdays = new Set(
-    Array.isArray(rule.weekdays) && rule.weekdays.length > 0 ? rule.weekdays : [todayWeekday]
+    Array.isArray(rule.weekdays) && rule.weekdays.length > 0 ? rule.weekdays : [targetWeekday]
   );
   document.querySelectorAll("#sched-weekday-pills .weekday-pill-btn").forEach((btn) => {
     const dayIdx = Number(btn.dataset.weekday);
@@ -2882,7 +2883,7 @@ function openScheduledTaskModal(existingTask = null) {
   });
 
   if (monthdayInput) {
-    monthdayInput.value = String(rule.monthDay || todayObj.getDate());
+    monthdayInput.value = String(rule.monthDay || targetDateObj.getDate());
   }
 
   modal.classList.remove("hidden");
@@ -4227,9 +4228,17 @@ function createMonthlyDayCell({
 // Render Selected Date Inspector & Interactive Quick-Log Drawer
 function renderDayInspector() {
   const todayStr = getLogicalTodayStr();
+  const isFutureDate = selectedDateStr > todayStr;
   const dateTitleEl = document.getElementById("inspector-date-title");
   const dateLabelReadable = selectedDateStr === todayStr ? `Today (${selectedDateStr})` : selectedDateStr;
   dateTitleEl.textContent = dateLabelReadable;
+
+  const toggleQuickLogBtn = document.getElementById("btn-toggle-quick-log");
+  const addScheduledForDateBtn = document.getElementById("btn-add-scheduled-for-date");
+  const quickLogDrawerEl = document.getElementById("quick-log-drawer");
+  if (toggleQuickLogBtn) toggleQuickLogBtn.classList.toggle("hidden", isFutureDate);
+  if (addScheduledForDateBtn) addScheduledForDateBtn.classList.toggle("hidden", !isFutureDate);
+  if (isFutureDate && quickLogDrawerEl) quickLogDrawerEl.classList.add("hidden");
 
   const quickLogDateLabel = document.getElementById("quick-log-date-label");
   if (quickLogDateLabel) {
@@ -4313,7 +4322,9 @@ function renderDayInspector() {
   listEl.innerHTML = "";
 
   if (dayLogs.length === 0 && completedScheduledForDate.length === 0) {
-    listEl.innerHTML = `<li class="empty-state">No completed activities logged on this date yet. Click <strong>+ Log Activity</strong> above to add one!</li>`;
+    listEl.innerHTML = isFutureDate
+      ? `<li class="empty-state">No completed activities or tasks for this future date yet. Click <strong>+ Schedule Task</strong> above to add one!</li>`
+      : `<li class="empty-state">No completed activities logged on this date yet. Click <strong>+ Log Activity</strong> above to add one!</li>`;
   } else {
     completedScheduledForDate.forEach(({ task, doneInDate }) => {
       const li = document.createElement("li");
@@ -6107,11 +6118,18 @@ function initEvents() {
   // Quick-Log Drawer Toggle in Selected Date Inspector
   const quickLogDrawer = document.getElementById("quick-log-drawer");
   const toggleQuickLogBtn = document.getElementById("btn-toggle-quick-log");
+  const addScheduledForDateBtn = document.getElementById("btn-add-scheduled-for-date");
   const closeQuickLogBtn = document.getElementById("btn-close-quick-log");
 
   toggleQuickLogBtn.addEventListener("click", () => {
     quickLogDrawer.classList.toggle("hidden");
   });
+
+  if (addScheduledForDateBtn) {
+    addScheduledForDateBtn.addEventListener("click", () => {
+      openScheduledTaskModal(null, selectedDateStr);
+    });
+  }
 
   closeQuickLogBtn.addEventListener("click", () => {
     quickLogDrawer.classList.add("hidden");
