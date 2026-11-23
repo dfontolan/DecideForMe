@@ -185,14 +185,15 @@ service cloud.firestore {
 
     // Daily star tier & streak summary (readable only by owner or accepted friends)
     match /dailyStatus/{userId} {
-      allow read: if isNonGuest() && (isOwner(userId) || isAcceptedFriend(userId));
+      allow read: if isNonGuest() && (isOwner(userId) || ('friendUids' in resource.data && request.auth.uid in resource.data.friendUids) || (!('friendUids' in resource.data) && isAcceptedFriend(userId)));
       allow create, update: if isOwner(userId) &&
                                isNonGuest() &&
-                               hasOnlyAllowedFields(['lastStarDate', 'lastStarTier', 'streak', 'streakDate', 'code', 'updatedAt']) &&
+                               hasOnlyAllowedFields(['lastStarDate', 'lastStarTier', 'streak', 'streakDate', 'code', 'friendUids', 'updatedAt']) &&
                                hasRequiredFields(['streak', 'streakDate', 'updatedAt']) &&
                                (!('lastStarDate' in request.resource.data) || request.resource.data.lastStarDate is string) &&
                                (!('lastStarTier' in request.resource.data) || request.resource.data.lastStarTier in ['none', 'bronze', 'silver', 'gold']) &&
                                (!('code' in request.resource.data) || (request.resource.data.code is string && request.resource.data.code.matches('^[0-9]{6}$'))) &&
+                               (!('friendUids' in request.resource.data) || (request.resource.data.friendUids is list && request.resource.data.friendUids.size() <= 200)) &&
                                request.resource.data.streak is int &&
                                request.resource.data.streak >= 0 &&
                                request.resource.data.streakDate is string &&

@@ -155,12 +155,13 @@ let currentUser = null;
 let socialProfile = null; // { code, displayName }
 let friendships = []; // [{ pairId, otherUid, otherName, status, requestedBy }]
 const friendStatuses = new Map(); // uid -> { lastStarDate, lastStarTier, streak, streakDate }
-const FRIEND_STATUS_TTL_MS = 60 * 1000;
+const FRIEND_STATUS_TTL_MS = 5 * 60 * 1000;
 const friendStatusFetchedAt = new Map(); // uid -> timestamp ms
 let unsubFriendships = null;
 let unsubNudges = null;
 let latestLocalStarSummary = null;
 let lastSyncedStarJson = "";
+let friendshipsLoaded = false;
 let uiBound = false;
 let isEditingNickname = false;
 let isEditingFriends = false;
@@ -335,6 +336,7 @@ function clearSocialListeners() {
   friendStatuses.clear();
   friendStatusFetchedAt.clear();
   friendships = [];
+  friendshipsLoaded = false;
   socialProfile = null;
   lastSyncedStarJson = "";
   isEditingNickname = false;
@@ -429,8 +431,12 @@ function attachSocialListeners(user) {
         });
       });
       friendships = next;
+      friendshipsLoaded = true;
       updateHeaderBadge();
       syncFriendStatusListeners();
+      if (socialProfile && latestLocalStarSummary) {
+        syncDailyStarStatus(latestLocalStarSummary).catch(() => {});
+      }
       renderFriendsModal();
     },
     (err) => {
@@ -705,12 +711,19 @@ function lastStarSyncStorageKey(uid) {
 
 export async function syncDailyStarStatus(summary) {
   latestLocalStarSummary = summary;
-  if (!db || !isNonGuestUser(currentUser) || !socialProfile) return;
+  if (!db || !isNonGuestUser(currentUser) || !socialProfile || !friendshipsLoaded) return;
 
   const hasStar = Boolean(summary.lastStarDate && summary.lastStarTier && summary.lastStarTier !== "none");
+  const friendUids = friendships
+    .filter((f) => f.status === "accepted" && f.otherUid)
+    .map((f) => f.otherUid)
+    .sort()
+    .slice(0, 200);
+
   const payload = {
     streak: Math.max(0, Number(summary.currentStreak) || 0),
     streakDate: summary.logicalTodayStr,
+    friendUids,
     updatedAt: serverTimestamp()
   };
   if (socialProfile.code) {
@@ -726,6 +739,7 @@ export async function syncDailyStarStatus(summary) {
     streak: payload.streak,
     streakDate: payload.streakDate,
     code: payload.code || null,
+    friendUids,
     lastStarDate: hasStar ? payload.lastStarDate : null,
     lastStarTier: hasStar ? payload.lastStarTier : null
   });
