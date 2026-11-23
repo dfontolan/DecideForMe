@@ -377,21 +377,24 @@ function getSocialStarSummary() {
     lastStarDate = logicalTodayStr;
     lastStarTier = todayProgress.starTier;
   } else {
-    const yDate = getLogicalTodayDate();
-    yDate.setDate(yDate.getDate() - 1);
-    const yStr = toLocalDateStr(yDate);
-    const yHasActivity = state.logs.some((l) => l.date === yStr);
-    const yStar = getStarStatusForDate(yStr, yHasActivity);
-    const yTier = yStar.hasGoldStar
-      ? "gold"
-      : yStar.hasSilverStar
-        ? "silver"
-        : yStar.hasBronzeStar
-          ? "bronze"
-          : "none";
-    if (yTier !== "none") {
-      lastStarDate = yStr;
-      lastStarTier = yTier;
+    const cursor = getLogicalTodayDate();
+    for (let i = 1; i <= 14; i++) {
+      cursor.setDate(cursor.getDate() - 1);
+      const dStr = toLocalDateStr(cursor);
+      const dHasActivity = state.logs.some((l) => l.date === dStr);
+      const dStar = getStarStatusForDate(dStr, dHasActivity);
+      const dTier = dStar.hasGoldStar
+        ? "gold"
+        : dStar.hasSilverStar
+          ? "silver"
+          : dStar.hasBronzeStar
+            ? "bronze"
+            : "none";
+      if (dTier !== "none") {
+        lastStarDate = dStr;
+        lastStarTier = dTier;
+        break;
+      }
     }
   }
 

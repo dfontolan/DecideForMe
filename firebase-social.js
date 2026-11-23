@@ -270,21 +270,32 @@ function resolveNudgeText(tier, messageIndex, fromName, senderTheme) {
   return list[idx].replace("{name}", fromName || "A friend");
 }
 
+function diffLocalDays(fromDateStr, toDateStr) {
+  if (!fromDateStr || !toDateStr) return null;
+  const [fy, fm, fd] = fromDateStr.split("-").map(Number);
+  const [ty, tm, td] = toDateStr.split("-").map(Number);
+  if (!fy || !fm || !fd || !ty || !tm || !td) return null;
+  const fromUtc = Date.UTC(fy, fm - 1, fd);
+  const toUtc = Date.UTC(ty, tm - 1, td);
+  return Math.round((toUtc - fromUtc) / 86400000);
+}
+
 function resolveFriendStarDisplay(status) {
   const today = getLogicalToday();
   const yesterday = getYesterdayStr(today);
 
-  let tier = "none";
-  let isYesterday = false;
+  let displayTier = "none";
+  let daysAgo = null;
 
-  if (status && status.lastStarTier && status.lastStarTier !== "none") {
-    if (status.lastStarDate === today) {
-      tier = status.lastStarTier;
-    } else if (status.lastStarDate === yesterday) {
-      tier = status.lastStarTier;
-      isYesterday = true;
+  if (status && status.lastStarTier && status.lastStarTier !== "none" && status.lastStarDate) {
+    const diff = diffLocalDays(status.lastStarDate, today);
+    if (diff !== null && diff >= 0 && diff <= 14) {
+      displayTier = status.lastStarTier;
+      daysAgo = diff;
     }
   }
+
+  const cheerTier = daysAgo !== null && daysAgo <= 1 ? displayTier : "none";
 
   let streak = 0;
   if (status && Number.isFinite(status.streak)) {
@@ -293,7 +304,7 @@ function resolveFriendStarDisplay(status) {
     }
   }
 
-  return { tier, isYesterday, streak };
+  return { displayTier, cheerTier, daysAgo, streak };
 }
 
 function updateHeaderBadge() {
@@ -609,10 +620,10 @@ async function sendCongratsNudge(friend) {
   if (!db || !isNonGuestUser(currentUser) || !socialProfile) return;
   const today = getLogicalToday();
   const status = friendStatuses.get(friend.otherUid);
-  const { tier } = resolveFriendStarDisplay(status);
+  const { cheerTier } = resolveFriendStarDisplay(status);
   const senderTheme = getCurrentTheme();
   const themePresets = THEME_NUDGE_PRESETS[senderTheme] || THEME_NUDGE_PRESETS.dark;
-  const presets = themePresets[tier] || themePresets.none;
+  const presets = themePresets[cheerTier] || themePresets.none;
   const messageIndex = Math.floor(Math.random() * presets.length);
   const nudgeId = `${currentUser.uid}_${friend.otherUid}_${today}`;
 
@@ -621,7 +632,7 @@ async function sendCongratsNudge(friend) {
       fromUid: currentUser.uid,
       toUid: friend.otherUid,
       fromName: socialProfile.displayName,
-      tier,
+      tier: cheerTier,
       senderTheme,
       messageIndex,
       date: today,
@@ -706,16 +717,25 @@ export async function onAuthUserChanged(user) {
   renderFriendsModal();
 }
 
-function renderStarBadge(tier, isYesterday) {
+function renderStarBadge(displayTier, daysAgo) {
   const span = document.createElement("span");
-  span.className = `friend-star-pill star-tier-${tier}`;
+  span.className = `friend-star-pill star-tier-${displayTier}`;
+  if (displayTier === "none" || daysAgo === null) {
+    span.textContent = "☆ No stars in the last two weeks";
+    return span;
+  }
   const labels = {
     gold: "⭐ Gold Star",
     silver: "★ Silver Star",
-    bronze: "★ Bronze Star",
-    none: "☆ No star yet"
+    bronze: "★ Bronze Star"
   };
-  span.textContent = (labels[tier] || labels.none) + (isYesterday && tier !== "none" ? " (yesterday)" : "");
+  const suffix =
+    daysAgo === 0
+      ? ""
+      : daysAgo === 1
+        ? " (yesterday)"
+        : ` (${daysAgo} days ago)`;
+  span.textContent = (labels[displayTier] || "☆ No stars in the last two weeks") + suffix;
   return span;
 }
 
@@ -864,7 +884,7 @@ function renderFriendsModal() {
       li.className = "friend-row";
 
       const status = friendStatuses.get(friend.otherUid);
-      const { tier, isYesterday, streak } = resolveFriendStarDisplay(status);
+      const { displayTier, cheerTier, daysAgo, streak } = resolveFriendStarDisplay(status);
 
       const info = document.createElement("div");
       info.className = "friend-row-info";
@@ -885,7 +905,7 @@ function renderFriendsModal() {
       streakSpan.textContent = `🔥 ${streak}d`;
       topLine.append(streakSpan);
 
-      const starBadge = renderStarBadge(tier, isYesterday);
+      const starBadge = renderStarBadge(displayTier, daysAgo);
       info.append(topLine, starBadge);
 
       const actions = document.createElement("div");
@@ -934,7 +954,7 @@ function renderFriendsModal() {
         cheerBtn.disabled = alreadySent;
         cheerBtn.textContent = alreadySent
           ? "Cheer sent"
-          : tier === "none"
+          : cheerTier === "none"
             ? "Cheer"
             : "Congrats";
         cheerBtn.addEventListener("click", () => sendCongratsNudge(friend));
