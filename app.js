@@ -4375,9 +4375,31 @@ function renderDayInspector() {
         const logSnapshot = { ...log };
         recordDeletedIds(log.id);
         state.logs = state.logs.filter((l) => l.id !== log.id);
+
+        let unmarkedDailyTaskId = null;
+        let recheckedItemId = null;
         if (log.date === todayStr) {
+          const hasRemainingTodayLog = state.logs.some(
+            (l) => l.date === todayStr && l.itemId === log.itemId
+          );
+          if (!hasRemainingTodayLog) {
+            const linkedDailyTask = findDailyTaskForActivity({ id: log.itemId });
+            if (linkedDailyTask && linkedDailyTask.doneToday) {
+              linkedDailyTask.doneToday = false;
+              unmarkedDailyTaskId = linkedDailyTask.id;
+            }
+            state.lists.forEach((l) => {
+              (l.items || []).forEach((it) => {
+                if (it.id === log.itemId && !it.checked) {
+                  it.checked = true;
+                  recheckedItemId = it.id;
+                }
+              });
+            });
+          }
           evaluateTodayDailyStar(false);
         }
+
         saveState();
         renderAll();
         showToast(`Removed "${log.itemTitle}" from ${log.date}`, {
@@ -4386,6 +4408,17 @@ function renderDayInspector() {
             clearDeletedIds(logSnapshot.id);
             if (!state.logs.some((l) => l.id === logSnapshot.id)) {
               state.logs.push(logSnapshot);
+            }
+            if (unmarkedDailyTaskId) {
+              const taskToRestore = state.dailyTasks.find((t) => t.id === unmarkedDailyTaskId);
+              if (taskToRestore) taskToRestore.doneToday = true;
+            }
+            if (recheckedItemId && logSnapshot.date === getLogicalTodayStr()) {
+              state.lists.forEach((l) => {
+                (l.items || []).forEach((it) => {
+                  if (it.id === recheckedItemId) it.checked = false;
+                });
+              });
             }
             if (logSnapshot.date === getLogicalTodayStr()) {
               evaluateTodayDailyStar(false);
@@ -4727,6 +4760,10 @@ function bindDelegatedListContainers() {
               }
             });
           });
+          const linkedDailyTask = findDailyTaskForActivity(item);
+          if (linkedDailyTask) {
+            linkedDailyTask.doneToday = false;
+          }
           evaluateTodayDailyStar(false);
           saveState();
           renderAll();
@@ -4804,6 +4841,36 @@ function bindDelegatedListContainers() {
         checkAndPerformDailyReset(false);
         const prevStats = getStatsSnapshot();
         task.doneToday = !task.doneToday;
+        const linkedActivity = findActivityForDailyTask(task);
+        if (linkedActivity) {
+          if (task.doneToday) {
+            state.lists.forEach((l) => {
+              (l.items || []).forEach((it) => {
+                if (it.id === linkedActivity.id) {
+                  it.checked = false;
+                }
+              });
+            });
+          } else {
+            const todayStr = getLogicalTodayStr();
+            const todayLogs = state.logs.filter(
+              (l) => l.date === todayStr && l.itemId === linkedActivity.id
+            );
+            if (todayLogs.length > 0) {
+              recordDeletedIds(todayLogs.map((l) => l.id));
+              state.logs = state.logs.filter(
+                (l) => !(l.date === todayStr && l.itemId === linkedActivity.id)
+              );
+            }
+            state.lists.forEach((l) => {
+              (l.items || []).forEach((it) => {
+                if (it.id === linkedActivity.id) {
+                  it.checked = true;
+                }
+              });
+            });
+          }
+        }
         if (task.doneToday) {
           const targetEl = e.target.closest(".log-daily-btn") || li;
           spawnConfettiBurst(targetEl, "#eab308");
@@ -4813,10 +4880,7 @@ function bindDelegatedListContainers() {
         if (task.doneToday) {
           trackAnalyticsEvent("daily_completed");
         }
-        renderDailyTasks();
-        renderCalendar();
-        renderDayInspector();
-        renderStatsAndInsights();
+        renderAll();
         animateStatBumps(prevStats);
         announceFreezeIfEarned(prevStats.availableFreezes);
       } else if (e.target.closest(".edit-daily-btn")) {

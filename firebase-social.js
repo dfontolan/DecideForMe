@@ -861,7 +861,24 @@ function renderFriendsModal() {
   const friendsListEl = document.getElementById("friends-accepted-list");
   const emptyEl = document.getElementById("friends-empty-state");
   const editFriendsBtn = document.getElementById("btn-friends-edit");
-  const accepted = friendships.filter((f) => f.status === "accepted");
+  const accepted = friendships
+    .filter((f) => f.status === "accepted")
+    .map((f) => {
+      const status = friendStatuses.get(f.otherUid);
+      const display = resolveFriendStarDisplay(status);
+      return { friend: f, status, display };
+    })
+    .sort((a, b) => {
+      const da = a.display.daysAgo === null ? Infinity : a.display.daysAgo;
+      const db = b.display.daysAgo === null ? Infinity : b.display.daysAgo;
+      if (da !== db) return da - db;
+      const tierRank = { gold: 3, silver: 2, bronze: 1, none: 0 };
+      const ta = tierRank[a.display.displayTier] || 0;
+      const tb = tierRank[b.display.displayTier] || 0;
+      if (ta !== tb) return tb - ta;
+      if (a.display.streak !== b.display.streak) return b.display.streak - a.display.streak;
+      return a.friend.otherName.localeCompare(b.friend.otherName);
+    });
   const sentToday = getSentSetToday();
 
   if (accepted.length === 0) {
@@ -879,12 +896,11 @@ function renderFriendsModal() {
     friendsListEl.innerHTML = "";
     emptyEl.classList.toggle("hidden", accepted.length > 0);
 
-    accepted.forEach((friend) => {
+    accepted.forEach(({ friend, status, display }) => {
       const li = document.createElement("li");
       li.className = "friend-row";
 
-      const status = friendStatuses.get(friend.otherUid);
-      const { displayTier, cheerTier, daysAgo, streak } = resolveFriendStarDisplay(status);
+      const { displayTier, cheerTier, daysAgo, streak } = display;
 
       const info = document.createElement("div");
       info.className = "friend-row-info";
