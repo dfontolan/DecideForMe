@@ -4,6 +4,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import {
   getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
   GoogleAuthProvider,
   EmailAuthProvider,
   onAuthStateChanged,
@@ -47,7 +50,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+let auth;
+try {
+  auth = initializeAuth(app, {
+    persistence: [indexedDBLocalPersistence, browserLocalPersistence]
+  });
+} catch {
+  auth = getAuth(app);
+}
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
@@ -82,6 +92,39 @@ let pendingPreSignInLocalState = null;
 let isExplicitSignOut = false;
 let attachGeneration = 0;
 let guestSignInPromise = null;
+
+const AUTH_OWNER_KEY = "decideForMe_authOwner_v1";
+
+function getExpectedAuthOwner() {
+  try {
+    const raw = localStorage.getItem(AUTH_OWNER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && parsed.uid ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function setExpectedAuthOwner(user) {
+  try {
+    if (!user || user.isAnonymous) return;
+    localStorage.setItem(
+      AUTH_OWNER_KEY,
+      JSON.stringify({ uid: user.uid, accountType: getAccountType(user) })
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function clearExpectedAuthOwner() {
+  try {
+    localStorage.removeItem(AUTH_OWNER_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 function ensureGuestAuth() {
   if (currentUser || auth.currentUser) return Promise.resolve(currentUser || auth.currentUser);
@@ -762,7 +805,9 @@ async function attachUserSync(user) {
 
 async function signInWithGoogle() {
   try {
-    const localSnapshot = window.DecideForMeApp?.getState();
+    const localSnapshot = !currentUser || currentUser.isAnonymous
+      ? window.DecideForMeApp?.getState()
+      : null;
     pendingPreSignInLocalState = localSnapshot ? sanitizeForFirestore(localSnapshot) : null;
 
     await signInWithPopup(auth, googleProvider);
@@ -792,7 +837,9 @@ async function signInWithUsername(rawUsername, password, isSignUp) {
     );
   }
 
-  const localSnapshot = window.DecideForMeApp?.getState();
+  const localSnapshot = !currentUser || currentUser.isAnonymous
+    ? window.DecideForMeApp?.getState()
+    : null;
   pendingPreSignInLocalState = localSnapshot ? sanitizeForFirestore(localSnapshot) : null;
 
   try {
@@ -836,6 +883,7 @@ async function signOut() {
       unsubscribeDoc = null;
     }
     isExplicitSignOut = true;
+    clearExpectedAuthOwner();
     lastSyncedJson = "";
     await firebaseSignOut(auth);
     window.DecideForMeApp?.resetToDefaultState();
@@ -983,6 +1031,7 @@ async function deleteAccount() {
       }
     }
 
+    clearExpectedAuthOwner();
     lastSyncedJson = "";
     window.DecideForMeApp?.resetToDefaultState();
     notifyToast("Your account and cloud data have been permanently deleted.");
@@ -1013,6 +1062,18 @@ onAuthStateChanged(auth, async (user) => {
       unsubscribeDoc();
       unsubscribeDoc = null;
     }
+
+    const expectedOwner = getExpectedAuthOwner();
+    if (expectedOwner && expectedOwner.accountType !== "guest" && !isExplicitSignOut) {
+      clearExpectedAuthOwner();
+      window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: true });
+      setSyncStatus("offline", "Session expired");
+      notifyToast("You were signed out. Sign in again to sync your account.");
+      return;
+    }
+
+    isExplicitSignOut = false;
+    window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: false });
     const localState = window.DecideForMeApp?.getState();
     if (localState && !isUntouchedDefaultState(localState)) {
       await ensureGuestAuth();
@@ -1024,6 +1085,12 @@ onAuthStateChanged(auth, async (user) => {
 
   isExplicitSignOut = false;
   currentUser = user;
+  if (!user.isAnonymous) {
+    setExpectedAuthOwner(user);
+    window.DecideForMeApp?.switchStorageScope(`uid_${user.uid}`, { resetIfMissing: false });
+  } else {
+    window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: false });
+  }
   syncAnalyticsUser(user);
   updateAccountUI(user);
   await attachUserSync(user);

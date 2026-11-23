@@ -2,7 +2,29 @@
  * DecideForMe — Local-First Activity Picker & Habit Logger
  */
 
-const STORAGE_KEY = "decideForMe_state_v1";
+const STORAGE_KEY_PREFIX = "decideForMe_state_v1";
+const ACTIVE_SCOPE_KEY = "decideForMe_activeScope_v1";
+
+function normalizeStorageScope(scope) {
+  return typeof scope === "string" && scope.startsWith("uid_") && scope.length > 4
+    ? scope
+    : "guest";
+}
+
+function getActiveStorageScope() {
+  try {
+    return normalizeStorageScope(localStorage.getItem(ACTIVE_SCOPE_KEY));
+  } catch {
+    return "guest";
+  }
+}
+
+function getStorageKeyForScope(scope = getActiveStorageScope()) {
+  const normalized = normalizeStorageScope(scope);
+  return normalized === "guest"
+    ? `${STORAGE_KEY_PREFIX}_guest`
+    : `${STORAGE_KEY_PREFIX}_${normalized}`;
+}
 const WEIGHT_STEPS = [1, 2, 4];
 const DAILY_RESET_HOUR = 3; // 3:00 AM local time daily reset
 const ROLL_DURATION_MS = 3000; // Total roll animation duration in milliseconds (change this single number to speed up or slow down)
@@ -275,7 +297,7 @@ function normalizeLoadedState(parsed) {
     parsed.lists = createDefaultLists();
     parsed.templateVersion = TEMPLATE_VERSION;
     parsed.activeDecision = null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    localStorage.setItem(getStorageKeyForScope(), JSON.stringify(parsed));
   }
 
   parsed.deletedIds = pruneDeletedIds(parsed.deletedIds);
@@ -325,7 +347,16 @@ function normalizeLoadedState(parsed) {
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const scopedKey = getStorageKeyForScope();
+    let raw = localStorage.getItem(scopedKey);
+    if (!raw) {
+      const legacyRaw = localStorage.getItem(STORAGE_KEY_PREFIX);
+      if (legacyRaw) {
+        localStorage.setItem(scopedKey, legacyRaw);
+        localStorage.removeItem(STORAGE_KEY_PREFIX);
+        raw = legacyRaw;
+      }
+    }
     if (!raw) return createDefaultState();
     return normalizeLoadedState(JSON.parse(raw));
   } catch (err) {
@@ -336,7 +367,7 @@ function loadState() {
 
 function saveState(skipCloud = false) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(getStorageKeyForScope(), JSON.stringify(state));
     if (!skipCloud && window.DecideForMeCloud && typeof window.DecideForMeCloud.scheduleSave === "function") {
       window.DecideForMeCloud.scheduleSave(state);
     }
@@ -6065,7 +6096,7 @@ function initEvents() {
       "Delete Local Data & Reset",
       "Are you sure you want to delete all local data (custom lists, calendar history, re-rolls, and daily stars) and restore default settings?",
       () => {
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(getStorageKeyForScope());
         state = createDefaultState();
         state.resetAt = Date.now();
         const logicalToday = getLogicalTodayDate();
@@ -6335,8 +6366,37 @@ window.DecideForMeApp = {
     applyTheme();
     renderAll();
   },
+  switchStorageScope: (nextScope, { resetIfMissing = true } = {}) => {
+    const targetScope = normalizeStorageScope(nextScope);
+    const currentScope = getActiveStorageScope();
+    if (targetScope === currentScope && !resetIfMissing) {
+      return;
+    }
+    localStorage.setItem(ACTIVE_SCOPE_KEY, targetScope);
+    const raw = localStorage.getItem(getStorageKeyForScope(targetScope));
+    if (raw) {
+      try {
+        state = normalizeLoadedState(JSON.parse(raw));
+      } catch {
+        state = createDefaultState();
+      }
+    } else if (resetIfMissing || targetScope !== currentScope) {
+      state = createDefaultState();
+    }
+    state.lists.forEach(syncListColorReferences);
+    checkAndPerformDailyReset(false);
+    saveState(true);
+    const logicalToday = getLogicalTodayDate();
+    calYear = logicalToday.getFullYear();
+    calMonth = logicalToday.getMonth();
+    selectedDateStr = getLogicalTodayStr();
+    applyTheme();
+    renderAll();
+  },
   resetToDefaultState: () => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(getStorageKeyForScope());
+    localStorage.setItem(ACTIVE_SCOPE_KEY, "guest");
+    localStorage.removeItem(getStorageKeyForScope("guest"));
     state = createDefaultState();
     const logicalToday = getLogicalTodayDate();
     calYear = logicalToday.getFullYear();
