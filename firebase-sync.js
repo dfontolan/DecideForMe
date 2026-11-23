@@ -29,7 +29,6 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
-  onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import {
@@ -90,8 +89,11 @@ try {
 }
 initSocial({ firestore: db });
 
+const USER_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
+
 let currentUser = null;
-let unsubscribeDoc = null;
+let lastUserSyncAt = 0;
+let activeUserRefreshPromise = null;
 let saveTimer = null;
 let pendingState = null;
 let activeFlushPromise = null;
@@ -609,6 +611,7 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
       docData.swCacheVersion = swCacheVersion;
     }
     await setDoc(doc(db, "users", user.uid), docData);
+    lastUserSyncAt = Date.now();
     setSyncStatus("synced");
   } catch (err) {
     if (lastSyncedJson === json) {
@@ -739,10 +742,6 @@ async function reconcileInitialSnapshot(user, snapshot, preSignInState) {
 
 async function attachUserSync(user) {
   const myGen = ++attachGeneration;
-  if (unsubscribeDoc) {
-    unsubscribeDoc();
-    unsubscribeDoc = null;
-  }
 
   if (!user) {
     setSyncStatus("offline", "Local only");
@@ -758,57 +757,52 @@ async function attachUserSync(user) {
   await user.getIdToken().catch(() => {});
   if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
 
-  if (user.isAnonymous) {
-    try {
-      const initialSnapshot = await getDoc(userRef);
-      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-      await reconcileInitialSnapshot(user, initialSnapshot, preSignInState);
-    } catch (err) {
-      if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-      console.warn("Initial guest Firestore sync error:", err);
-      setSyncStatus("error");
-    }
-    return;
+  try {
+    const initialSnapshot = await getDoc(userRef);
+    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+    lastUserSyncAt = Date.now();
+    await reconcileInitialSnapshot(user, initialSnapshot, preSignInState);
+  } catch (err) {
+    if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
+    console.warn("Initial Firestore sync error:", err);
+    setSyncStatus("error");
   }
+}
 
-  let isInitialSnapshot = true;
-  unsubscribeDoc = onSnapshot(
-    userRef,
-    async (snapshot) => {
+async function refreshUserFromCloudOnFocus() {
+  const user = currentUser;
+  if (!user || user.isAnonymous) return;
+  if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
+  if (Date.now() - lastUserSyncAt < USER_SYNC_COOLDOWN_MS) return;
+  if (activeUserRefreshPromise) return activeUserRefreshPromise;
+
+  const myGen = attachGeneration;
+  lastUserSyncAt = Date.now();
+
+  activeUserRefreshPromise = (async () => {
+    try {
+      const snapshot = await getDoc(doc(db, "users", user.uid));
       if (myGen !== attachGeneration || currentUser?.uid !== user.uid) return;
-      if (isInitialSnapshot) {
-        isInitialSnapshot = false;
-        try {
-          await reconcileInitialSnapshot(user, snapshot, preSignInState);
-        } catch (err) {
-          console.warn("Initial Firestore sync error:", err);
-          setSyncStatus("error");
-        }
-        return;
-      }
-      if (snapshot.metadata.hasPendingWrites) return;
       if (saveTimer !== null || pendingState !== null || activeFlushPromise !== null) return;
       if (!snapshot.exists()) return;
-      try {
-        const remoteState = await decryptCloudData(user.uid, snapshot.data());
-        if (!remoteState) return;
-        const cleanRemote = sanitizeCloudState(remoteState);
-        const remoteJson = JSON.stringify(cleanRemote);
-        if (remoteJson === lastSyncedJson) return;
 
-        lastSyncedJson = remoteJson;
-        window.DecideForMeApp?.applyCloudState(cleanRemote);
-        setSyncStatus("synced");
-      } catch (decryptErr) {
-        console.warn("Firestore snapshot decrypt error:", decryptErr);
-        setSyncStatus("error");
-      }
-    },
-    (err) => {
-      console.warn("Firestore snapshot listener error:", err);
-      setSyncStatus("error");
+      const remoteState = await decryptCloudData(user.uid, snapshot.data());
+      if (!remoteState) return;
+      const cleanRemote = sanitizeCloudState(remoteState);
+      const remoteJson = JSON.stringify(cleanRemote);
+      if (remoteJson === lastSyncedJson) return;
+
+      lastSyncedJson = remoteJson;
+      window.DecideForMeApp?.applyCloudState(cleanRemote);
+      setSyncStatus("synced");
+    } catch (err) {
+      console.warn("Firestore focus refresh error:", err);
+    } finally {
+      activeUserRefreshPromise = null;
     }
-  );
+  })();
+
+  return activeUserRefreshPromise;
 }
 
 async function signInWithGoogle() {
@@ -886,13 +880,10 @@ async function signInWithUsername(rawUsername, password, isSignUp) {
 async function signOut() {
   try {
     await flushSave();
-    if (unsubscribeDoc) {
-      unsubscribeDoc();
-      unsubscribeDoc = null;
-    }
     isExplicitSignOut = true;
     clearExpectedAuthOwner();
     lastSyncedJson = "";
+    lastUserSyncAt = 0;
     await firebaseSignOut(auth);
     window.DecideForMeApp?.resetToDefaultState();
     notifyToast("Signed out. Switched to a fresh Guest session.");
@@ -1004,11 +995,6 @@ async function deleteAccount() {
   }
   pendingState = null;
 
-  if (unsubscribeDoc) {
-    unsubscribeDoc();
-    unsubscribeDoc = null;
-  }
-
   try {
     try {
       await cleanupSocialAccountData(user.uid);
@@ -1070,10 +1056,7 @@ onAuthStateChanged(auth, async (user) => {
     pendingState = null;
     updateAccountUI(null);
     onAuthUserChanged(null).catch(() => {});
-    if (unsubscribeDoc) {
-      unsubscribeDoc();
-      unsubscribeDoc = null;
-    }
+    lastUserSyncAt = 0;
 
     const expectedOwner = getExpectedAuthOwner();
     if (expectedOwner && expectedOwner.accountType !== "guest" && !isExplicitSignOut) {
@@ -1112,6 +1095,8 @@ onAuthStateChanged(auth, async (user) => {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
     flushSave();
+  } else if (document.visibilityState === "visible") {
+    refreshUserFromCloudOnFocus();
   }
 });
 window.addEventListener("beforeunload", () => {
