@@ -780,7 +780,7 @@
         <div>
           <div class="about-title-row">
             <h3 id="modal-about-title">DecideForMe</h3>
-            <span class="badge about-version-badge">v1.4 (build 71)</span>
+            <span class="badge about-version-badge">v1.4 (build 73)</span>
           </div>
           <p class="text-muted small">Activity Picker, Task Tracker &amp; Habit Logger</p>
         </div>
@@ -793,7 +793,7 @@
       <dl class="about-meta-list">
         <div class="about-meta-row">
           <dt>Version</dt>
-          <dd>1.4 (build 71)</dd>
+          <dd>1.4 (build 73)</dd>
         </div>
         <div class="about-meta-row">
           <dt>Author</dt>
@@ -949,7 +949,10 @@
         </div>
 
         <div class="friends-section">
-          <h4 class="friends-section-title">Friends</h4>
+          <div class="friends-section-header">
+            <h4 class="friends-section-title">Friends</h4>
+            <button type="button" class="btn btn-secondary btn-xs btn-edit-mode hidden" id="btn-friends-edit" aria-pressed="false">Edit</button>
+          </div>
           <p class="text-muted small hidden" id="friends-empty-state">
             No friends yet. Share your 6-digit code or add a friend above!
           </p>

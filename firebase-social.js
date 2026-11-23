@@ -161,6 +161,8 @@ let unsubNudges = null;
 let latestLocalStarSummary = null;
 let uiBound = false;
 let isEditingNickname = false;
+let isEditingFriends = false;
+let confirmingRemovePairId = null;
 let socialAttachGen = 0;
 const handledNudgeIds = new Set();
 const cheerQueue = [];
@@ -838,8 +840,20 @@ function renderFriendsModal() {
   // Accepted friends list
   const friendsListEl = document.getElementById("friends-accepted-list");
   const emptyEl = document.getElementById("friends-empty-state");
+  const editFriendsBtn = document.getElementById("btn-friends-edit");
   const accepted = friendships.filter((f) => f.status === "accepted");
   const sentToday = getSentSetToday();
+
+  if (accepted.length === 0) {
+    isEditingFriends = false;
+    confirmingRemovePairId = null;
+  }
+
+  if (editFriendsBtn) {
+    editFriendsBtn.classList.toggle("hidden", accepted.length === 0);
+    editFriendsBtn.textContent = isEditingFriends ? "Done" : "Edit";
+    editFriendsBtn.setAttribute("aria-pressed", String(isEditingFriends));
+  }
 
   if (friendsListEl && emptyEl) {
     friendsListEl.innerHTML = "";
@@ -877,27 +891,56 @@ function renderFriendsModal() {
       const actions = document.createElement("div");
       actions.className = "friend-row-actions";
 
-      const cheerBtn = document.createElement("button");
-      cheerBtn.type = "button";
-      const alreadySent = sentToday.has(friend.otherUid);
-      cheerBtn.className = alreadySent ? "btn btn-secondary btn-xs" : "btn btn-primary btn-xs";
-      cheerBtn.disabled = alreadySent;
-      cheerBtn.textContent = alreadySent
-        ? "Sent ✓"
-        : tier === "none"
-          ? "Cheer"
-          : "Congrats";
-      cheerBtn.addEventListener("click", () => sendCongratsNudge(friend));
+      if (isEditingFriends) {
+        if (confirmingRemovePairId === friend.pairId) {
+          const confirmBtn = document.createElement("button");
+          confirmBtn.type = "button";
+          confirmBtn.className = "btn btn-danger btn-xs";
+          confirmBtn.textContent = "Confirm";
+          confirmBtn.addEventListener("click", async () => {
+            confirmBtn.disabled = true;
+            confirmingRemovePairId = null;
+            await removeFriendship(friend.pairId);
+          });
 
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "btn-icon danger";
-      removeBtn.title = "Remove friend";
-      removeBtn.setAttribute("aria-label", `Remove ${friend.otherName}`);
-      removeBtn.textContent = "✕";
-      removeBtn.addEventListener("click", () => removeFriendship(friend.pairId));
+          const cancelBtn = document.createElement("button");
+          cancelBtn.type = "button";
+          cancelBtn.className = "btn btn-ghost btn-xs";
+          cancelBtn.textContent = "Cancel";
+          cancelBtn.addEventListener("click", () => {
+            confirmingRemovePairId = null;
+            renderFriendsModal();
+          });
 
-      actions.append(cheerBtn, removeBtn);
+          actions.append(confirmBtn, cancelBtn);
+        } else {
+          const removeBtn = document.createElement("button");
+          removeBtn.type = "button";
+          removeBtn.className = "btn btn-danger btn-xs";
+          removeBtn.textContent = "Remove";
+          removeBtn.setAttribute("aria-label", `Remove ${friend.otherName}`);
+          removeBtn.addEventListener("click", () => {
+            confirmingRemovePairId = friend.pairId;
+            renderFriendsModal();
+          });
+
+          actions.append(removeBtn);
+        }
+      } else {
+        const cheerBtn = document.createElement("button");
+        cheerBtn.type = "button";
+        const alreadySent = sentToday.has(friend.otherUid);
+        cheerBtn.className = alreadySent ? "btn btn-secondary btn-xs" : "btn btn-primary btn-xs";
+        cheerBtn.disabled = alreadySent;
+        cheerBtn.textContent = alreadySent
+          ? "Cheer sent"
+          : tier === "none"
+            ? "Cheer"
+            : "Congrats";
+        cheerBtn.addEventListener("click", () => sendCongratsNudge(friend));
+
+        actions.append(cheerBtn);
+      }
       li.append(info, actions);
       friendsListEl.appendChild(li);
     });
@@ -993,6 +1036,12 @@ function bindFriendsUI() {
   document.getElementById("btn-friends-guest-username")?.addEventListener("click", () => {
     closeFriendsModal();
     window.DecideForMeCloud?.signInWithUsername?.();
+  });
+
+  document.getElementById("btn-friends-edit")?.addEventListener("click", () => {
+    isEditingFriends = !isEditingFriends;
+    confirmingRemovePairId = null;
+    renderFriendsModal();
   });
 
   document.getElementById("btn-friends-edit-name")?.addEventListener("click", () => {
