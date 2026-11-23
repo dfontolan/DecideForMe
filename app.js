@@ -254,6 +254,89 @@ function normalizeLists(lists) {
   });
 }
 
+function findDailyTaskForActivity(item, targetState = state) {
+  if (!item || !targetState || !Array.isArray(targetState.dailyTasks)) return null;
+  if (item.dailyTaskId) {
+    const byId = targetState.dailyTasks.find((t) => t.id === item.dailyTaskId);
+    if (byId) return byId;
+  }
+  return targetState.dailyTasks.find((t) => t.linkedActivityId === item.id) || null;
+}
+
+function findActivityForDailyTask(task, targetState = state) {
+  if (!task || !targetState || !Array.isArray(targetState.lists)) return null;
+  for (const list of targetState.lists) {
+    if (!Array.isArray(list.items)) continue;
+    const match = list.items.find(
+      (i) => (task.linkedActivityId && i.id === task.linkedActivityId) || i.dailyTaskId === task.id
+    );
+    if (match) return match;
+  }
+  return null;
+}
+
+function syncActivityDailyLink(item, shouldBeDaily) {
+  if (!item) return;
+  if (!Array.isArray(state.dailyTasks)) {
+    state.dailyTasks = [];
+  }
+  const existing = findDailyTaskForActivity(item);
+  if (shouldBeDaily) {
+    if (existing) {
+      existing.title = item.title;
+      existing.linkedActivityId = item.id;
+      item.dailyTaskId = existing.id;
+    } else {
+      const newTask = {
+        id: uid("daily"),
+        title: item.title,
+        doneToday: false,
+        linkedActivityId: item.id
+      };
+      state.dailyTasks.push(newTask);
+      item.dailyTaskId = newTask.id;
+    }
+  } else {
+    if (existing) {
+      recordDeletedIds(existing.id);
+      state.dailyTasks = state.dailyTasks.filter((t) => t.id !== existing.id);
+    }
+    delete item.dailyTaskId;
+  }
+}
+
+function unlinkDailyTaskFromActivities(taskId) {
+  if (!taskId || !Array.isArray(state.lists)) return;
+  state.lists.forEach((list) => {
+    if (!Array.isArray(list.items)) return;
+    list.items.forEach((item) => {
+      if (item.dailyTaskId === taskId) {
+        delete item.dailyTaskId;
+      }
+    });
+  });
+}
+
+function reconcileActivityDailyLinks(targetState) {
+  if (!targetState || !Array.isArray(targetState.lists) || !Array.isArray(targetState.dailyTasks)) return;
+  const dailyIds = new Set(targetState.dailyTasks.map((t) => t.id));
+  const activityIds = new Set();
+  targetState.lists.forEach((list) => {
+    if (!Array.isArray(list.items)) return;
+    list.items.forEach((item) => {
+      if (item && item.id) activityIds.add(item.id);
+      if (item && item.dailyTaskId && !dailyIds.has(item.dailyTaskId)) {
+        delete item.dailyTaskId;
+      }
+    });
+  });
+  targetState.dailyTasks.forEach((task) => {
+    if (task && task.linkedActivityId && !activityIds.has(task.linkedActivityId)) {
+      delete task.linkedActivityId;
+    }
+  });
+}
+
 function normalizeLoadedState(parsed) {
   if (!parsed || !Array.isArray(parsed.lists) || parsed.lists.length === 0) {
     return createDefaultState();
@@ -321,6 +404,7 @@ function normalizeLoadedState(parsed) {
   }
 
   normalizeLists(parsed.lists);
+  reconcileActivityDailyLinks(parsed);
   if (!parsed.lists.some((l) => l.id === parsed.activeListId)) {
     parsed.activeListId = parsed.lists[0].id;
   }
@@ -1137,6 +1221,8 @@ function openInputModal({
   initialColor = PALETTE[0],
   showWeightPicker = false,
   initialWeight = 1,
+  showDailyTaskToggle = false,
+  initialIsDailyTask = false,
   showSubtasksEditor = false,
   showAddAnother = false,
   onSave
@@ -1166,6 +1252,15 @@ function openInputModal({
     }
   }
 
+  const dailySection = document.getElementById("modal-list-daily-section");
+  const dailyCheckbox = document.getElementById("input-modal-daily-task");
+  if (dailySection) {
+    dailySection.classList.toggle("hidden", !showDailyTaskToggle);
+  }
+  if (dailyCheckbox) {
+    dailyCheckbox.checked = Boolean(showDailyTaskToggle && initialIsDailyTask);
+  }
+
   const subtasksSection = document.getElementById("modal-list-subtasks-section");
   pendingModalSubtasks = [];
   if (subtasksSection) {
@@ -1183,7 +1278,9 @@ function openInputModal({
 
   pendingInputAction = onSave;
   const modalEl = document.getElementById("modal-list");
-  const isLargeModal = Boolean(showColorPicker || showWeightPicker || showSubtasksEditor);
+  const isLargeModal = Boolean(
+    showColorPicker || showWeightPicker || showDailyTaskToggle || showSubtasksEditor
+  );
   modalEl.classList.toggle("modal-top", isLargeModal);
   modalEl.classList.remove("hidden");
   inputEl.focus();
@@ -1193,6 +1290,8 @@ function openInputModal({
 function closeInputModal() {
   pendingInputAction = null;
   pendingModalSubtasks = [];
+  const dailyCheckbox = document.getElementById("input-modal-daily-task");
+  if (dailyCheckbox) dailyCheckbox.checked = false;
   const subInput = document.getElementById("input-modal-subtask");
   if (subInput) subInput.value = "";
   renderModalSubtasksList();
@@ -1981,9 +2080,18 @@ function renderListTabs() {
           "Delete List",
           `Are you sure you want to delete list "${list.name}" and its items? (Past calendar logs will be kept)`,
           () => {
+            const linkedDailyIds = (list.items || [])
+              .map((item) => findDailyTaskForActivity(item))
+              .filter(Boolean)
+              .map((t) => t.id);
+            if (linkedDailyIds.length > 0) {
+              const linkedSet = new Set(linkedDailyIds);
+              state.dailyTasks = state.dailyTasks.filter((t) => !linkedSet.has(t.id));
+            }
             recordDeletedIds(
               list.id,
-              ...(list.items || []).map((i) => i.id)
+              ...(list.items || []).map((i) => i.id),
+              ...linkedDailyIds
             );
             state.lists = state.lists.filter((l) => l.id !== list.id);
             if (state.activeListId === list.id) {
@@ -1992,6 +2100,7 @@ function renderListTabs() {
             if (state.activeDecision && state.activeDecision.listId === list.id) {
               state.activeDecision = null;
             }
+            evaluateTodayDailyStar(false);
             saveState();
             renderAll();
             showToast(`Deleted list "${list.name}"`);
@@ -2411,6 +2520,11 @@ function renderActivityPool() {
         ? Math.round((weight / totalCheckedWeight) * 100)
         : 0;
 
+    const isLinkedDaily = Boolean(findDailyTaskForActivity(item));
+    const dailyBadgeHtml = isLinkedDaily
+      ? `<span class="activity-daily-badge" title="Also a Daily Task">Daily</span>`
+      : "";
+
     li.innerHTML = `
       <div class="activity-left">
         <span class="drag-grip" title="Drag to reorder task" aria-hidden="true">⠿</span>
@@ -2421,7 +2535,7 @@ function renderActivityPool() {
           aria-label="Include ${escapeHtml(item.title)} in roll"
         />
         <div class="activity-title-group">
-          <span class="activity-title" title="Click to toggle">${escapeHtml(item.title)}</span>
+          <span class="activity-title" title="Click to toggle">${escapeHtml(item.title)}</span>${dailyBadgeHtml}
         </div>
       </div>
       <div class="activity-right">
@@ -2447,7 +2561,7 @@ function renderActivityPool() {
         <button
           type="button"
           class="btn-icon edit-item-btn"
-          title="Rename activity"
+          title="Edit activity"
         >
           ${ICON_EDIT_SVG}
         </button>
@@ -3545,6 +3659,7 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), origi
     state.activeDecision.itemId === item.id;
 
   // If completed for today, automatically uncheck it for the rest of the day (until 3am reset)
+  // and mark any linked Daily Task as complete for today (one-way sync).
   if (dateStr === todayStr) {
     state.lists.forEach((l) => {
       l.items.forEach((it) => {
@@ -3553,6 +3668,11 @@ function logActivityCompletion(item, list, dateStr = getLogicalTodayStr(), origi
         }
       });
     });
+
+    const linkedDailyTask = findDailyTaskForActivity(item);
+    if (linkedDailyTask && !linkedDailyTask.doneToday) {
+      linkedDailyTask.doneToday = true;
+    }
 
     if (isCompletingActiveHero) {
       if (!prefersReducedMotion()) {
@@ -4616,19 +4736,25 @@ function bindDelegatedListContainers() {
         logActivityCompletion(item, activeList, todayStr, logBtn);
       } else if (e.target.closest(".edit-item-btn")) {
         openInputModal({
-          title: "Rename Activity",
+          title: "Edit Activity",
           label: "Activity Name",
           initialValue: item.title,
           placeholder: "Enter activity name...",
-          onSave: (newTitle) => {
+          showWeightPicker: true,
+          initialWeight: normalizeWeight(item.weight),
+          showDailyTaskToggle: true,
+          initialIsDailyTask: Boolean(findDailyTaskForActivity(item)),
+          onSave: (newTitle, _color, newWeight, _subtasks, isDailyTask) => {
             item.title = newTitle;
+            item.weight = normalizeWeight(newWeight);
             if (state.activeDecision && state.activeDecision.itemId === item.id) {
               state.activeDecision.title = newTitle;
             }
+            syncActivityDailyLink(item, isDailyTask);
+            evaluateTodayDailyStar(false);
             saveState();
-            renderActivityPool();
-            renderDecisionCard();
-            showToast(`Renamed activity to "${newTitle}"`);
+            renderAll();
+            showToast(`Updated "${newTitle}"`);
           }
         });
       } else if (e.target.closest(".delete-item-btn")) {
@@ -4636,15 +4762,15 @@ function bindDelegatedListContainers() {
           "Delete Activity",
           `Are you sure you want to delete "${item.title}" from "${activeList.name}"?`,
           () => {
+            syncActivityDailyLink(item, false);
             recordDeletedIds(item.id);
             activeList.items = activeList.items.filter((i) => i.id !== item.id);
             if (state.activeDecision && state.activeDecision.itemId === item.id) {
               state.activeDecision = null;
             }
+            evaluateTodayDailyStar(false);
             saveState();
-            renderListTabs();
-            renderActivityPool();
-            renderDecisionCard();
+            renderAll();
             showToast(`Deleted "${item.title}"`);
           }
         );
@@ -4701,8 +4827,15 @@ function bindDelegatedListContainers() {
           placeholder: "Enter daily task name...",
           onSave: (newTitle) => {
             task.title = newTitle;
+            const linkedActivity = findActivityForDailyTask(task);
+            if (linkedActivity) {
+              linkedActivity.title = newTitle;
+              if (state.activeDecision && state.activeDecision.itemId === linkedActivity.id) {
+                state.activeDecision.title = newTitle;
+              }
+            }
             saveState();
-            renderDailyTasks();
+            renderAll();
             showToast(`Renamed daily task to "${newTitle}"`);
           }
         });
@@ -4711,14 +4844,12 @@ function bindDelegatedListContainers() {
           "Delete Daily Task",
           `Are you sure you want to delete daily task "${task.title}"?`,
           () => {
+            unlinkDailyTaskFromActivities(task.id);
             recordDeletedIds(task.id);
             state.dailyTasks = state.dailyTasks.filter((t) => t.id !== task.id);
             evaluateTodayDailyStar(false);
             saveState();
-            renderDailyTasks();
-            renderCalendar();
-            renderDayInspector();
-            renderStatsAndInsights();
+            renderAll();
             showToast(`Deleted daily task "${task.title}"`);
           }
         );
@@ -5884,20 +6015,25 @@ function initEvents() {
         saveLabel: "Add",
         showWeightPicker: true,
         initialWeight: 1,
+        showDailyTaskToggle: true,
+        initialIsDailyTask: false,
         showAddAnother: true,
-        onSave: (title, _color, weight) => {
+        onSave: (title, _color, weight, _subtasks, isDailyTask) => {
           const currentList = getActiveList();
-          currentList.items.push({
+          const newItem = {
             id: uid("item"),
             title,
             checked: true,
             weight: normalizeWeight(weight)
-          });
+          };
+          currentList.items.push(newItem);
+          if (isDailyTask) {
+            syncActivityDailyLink(newItem, true);
+            evaluateTodayDailyStar(true);
+          }
           saveState();
           trackAnalyticsEvent("activity_added");
-          renderListTabs();
-          renderActivityPool();
-          renderDecisionCard();
+          renderAll();
           showToast(`Added "${title}"`);
         }
       });
@@ -6053,10 +6189,13 @@ function initEvents() {
         return;
       }
       const subtasks = collectPendingModalSubtasks();
+      const dailyCheckbox = document.getElementById("input-modal-daily-task");
+      const isDailyTask = Boolean(dailyCheckbox && dailyCheckbox.checked);
       if (typeof pendingInputAction === "function") {
-        pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks);
+        pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks, isDailyTask);
       }
       listNameInput.value = "";
+      if (dailyCheckbox) dailyCheckbox.checked = false;
       pendingModalSubtasks = [];
       renderModalSubtasksList();
       listNameInput.focus();
@@ -6069,8 +6208,10 @@ function initEvents() {
     if (!name) return;
 
     const subtasks = collectPendingModalSubtasks();
+    const dailyCheckbox = document.getElementById("input-modal-daily-task");
+    const isDailyTask = Boolean(dailyCheckbox && dailyCheckbox.checked);
     if (typeof pendingInputAction === "function") {
-      pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks);
+      pendingInputAction(name, selectedListModalColor, selectedModalWeight, subtasks, isDailyTask);
     }
     closeInputModal();
   });

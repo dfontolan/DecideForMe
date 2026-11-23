@@ -2218,6 +2218,22 @@ body {
   line-height: 1;
 }
 
+.activity-daily-badge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  background: color-mix(in srgb, var(--accent-primary) 16%, var(--bg-card-elevated));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  color: var(--accent-primary);
+}
+
 .activity-right {
   display: flex;
   align-items: center;
@@ -4007,6 +4023,27 @@ body {
 
 .modal-weight-section {
   margin-bottom: 18px;
+}
+
+.modal-daily-section {
+  margin-bottom: 18px;
+}
+
+.modal-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.modal-daily-hint {
+  margin-top: 6px;
+  margin-left: 27px;
+  line-height: 1.4;
 }
 
 .weight-picker-group {
