@@ -16,27 +16,138 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 
-const NUDGE_PRESETS = {
-  none: [
-    "{name} is cheering you on today! 💪",
-    "{name} sent you a motivational boost — you've got this!",
-    "{name} is rooting for you today! ✨"
-  ],
-  bronze: [
-    "{name} sent congrats on your Bronze Star! ★",
-    "{name} noticed your Bronze Star — nice momentum!",
-    "{name} is cheering on your Bronze Star today! ★"
-  ],
-  silver: [
-    "{name} congratulated you on your Silver Star! ★",
-    "{name} says awesome job earning your Silver Star!",
-    "{name} is hyped for your Silver Star! ★"
-  ],
-  gold: [
-    "{name} sent huge congrats on your Gold Star! ⭐",
-    "{name} is celebrating your Gold Star today! ⭐",
-    "{name} says way to crush it with a Gold Star! ⭐"
-  ]
+const THEME_NUDGE_PRESETS = {
+  dark: {
+    none: [
+      "{name} says: DON'T GIVE UP!! Keep swinging! 💪",
+      "{name} yells: KEEP TRYING!! You've got this! 🔥",
+      "{name} says: NO QUITTING ALLOWED!! Keep pushing! 🚀",
+      "{name} says: YOU CAN DO THIS!! Keep going! ✨"
+    ],
+    bronze: [
+      "{name} says: Bronze Star! ★ Don't stop now, keep going! 💪",
+      "{name} yells: YOU CAN DO THIS!! Bronze is just warm-up! 🔥",
+      "{name} says: Bronze Star! ★ No quitting — keep pushing! 🚀",
+      "{name} says: Bronze Star! ★ Keep the engine running! 💥"
+    ],
+    silver: [
+      "{name} says: Silver Star! ★ Don't give up now, keep pushing! 💪",
+      "{name} yells: SILVER STAR!! ★ YOU CAN DO THIS — keep going! 🔥",
+      "{name} says: Silver Star! ★ No coasting — stay locked in! 🚀",
+      "{name} says: SILVER STAR?! ★ Keep grinding, don't quit! ⚡"
+    ],
+    gold: [
+      "{name} says: LET'S FUCKING GO!! GOLD STAR!! ⭐ 🔥",
+      "{name} is celebrating your Gold Star! ⭐ YOU DID THAT!! 💪",
+      "{name} saw your Gold Star! ⭐ UNSTOPPABLE!! 🏆",
+      "{name} says: GOLD STAR BABY!! ⭐ 🚀",
+      "{name} says: GOLD STAR?! BEAST MODE!! ★ 💪"
+    ]
+  },
+  astrology: {
+    none: [
+      "{name} says: Mercury's in Gatorade, NOT you — DON'T GIVE UP! 🔮",
+      "{name} says: Your birth chart says KEEP TRYING!! ✨",
+      "{name} yells: Blame the moon if you want, just DON'T QUIT! 🌙",
+      "{name} says: The cosmos demands you KEEP PUSHING!! 🚀"
+    ],
+    bronze: [
+      "{name} says: Bronze Star! ★ Rising sign energy — keep going! 🔮",
+      "{name} yells: YOU CAN DO THIS!! Bronze is just the first house! ✨",
+      "{name} says: Bronze Star! ★ No cosmic quitting now! 🌙",
+      "{name} says: Bronze Star! ★ The stars say keep pushing! 💫"
+    ],
+    silver: [
+      "{name} says: Silver Star! ★ Big Leo energy — don't stop now! 🦁",
+      "{name} yells: SILVER STAR!! ★ Keep going, universe is watching! 🔮",
+      "{name} says: Silver Star! ★ No retrograde excuses — keep pushing! 🚀",
+      "{name} says: SILVER STAR?! ★ Stay aligned, don't quit! ⚡"
+    ],
+    gold: [
+      "{name} says: LET'S FUCKING GO!! FULL MOON GOLD STAR!! ⭐ 🔮",
+      "{name} saw your Gold Star! ⭐ COSMIC BEAST MODE!! ✨",
+      "{name} says: GOLD STAR BABY!! ⭐ WRITTEN IN THE STARS!! 🚀",
+      "{name} is celebrating your Gold Star! ⭐ PURE MAIN-CHARACTER ORBIT!! 🏆"
+    ]
+  },
+  tarot: {
+    none: [
+      "{name} drew The Fool for you: KEEP TRYING anyway!! 🃏",
+      "{name} says: Reversed Tower vibes? DON'T GIVE UP!! 💪",
+      "{name} yells: Flip the next card — NO QUITTING ALLOWED!! 🔥",
+      "{name} says: Fate says KEEP SWINGING!! You've got this! ✨"
+    ],
+    bronze: [
+      "{name} says: Bronze Star! ★ Just card one — keep drawing! 🃏",
+      "{name} yells: YOU CAN DO THIS!! Bronze is only the Minor Arcana! 🔥",
+      "{name} says: Bronze Star! ★ Don't fold now, keep going! 💪",
+      "{name} says: Bronze Star! ★ Keep pulling cards! ✨"
+    ],
+    silver: [
+      "{name} says: Silver Star! ★ Major Arcana energy — keep pushing! 🃏",
+      "{name} yells: SILVER STAR!! ★ YOU CAN DO THIS — don't quit! 🔥",
+      "{name} says: Silver Star! ★ The Chariot says keep rolling! 🚀",
+      "{name} says: SILVER STAR?! ★ Stay in the deck, keep going! ⚡"
+    ],
+    gold: [
+      "{name} says: LET'S FUCKING GO!! THE SUN CARD!! GOLD STAR!! ⭐ 🃏",
+      "{name} saw your Gold Star! ⭐ STRAIGHT MAJOR ARCANA BEAST MODE!! 💪",
+      "{name} says: GOLD STAR BABY!! ⭐ DESTINY UNLOCKED!! 🏆",
+      "{name} is celebrating your Gold Star! ⭐ UNSTOPPABLE!! 🔥"
+    ]
+  },
+  win95: {
+    none: [
+      "{name} says: TaskManager.exe says DON'T GIVE UP!! 🖥️",
+      "{name} yells: Not responding? KEEP TRYING!! 💾",
+      "{name} says: Don't Ctrl+Alt+Del your day — KEEP PUSHING! 💪",
+      "{name} says: Reboot and KEEP SWINGING!! You've got this! ⚡"
+    ],
+    bronze: [
+      "{name} says: Bronze Star! ★ Dial-up speed, but keep going! 🖥️",
+      "{name} yells: YOU CAN DO THIS!! Bronze is just booting up! 💾",
+      "{name} says: Bronze Star! ★ Don't hit Cancel — keep pushing! 🚀",
+      "{name} says: Bronze Star! ★ 25% loaded, don't quit now! ⏳"
+    ],
+    silver: [
+      "{name} says: Silver Star! ★ Pentium II energy — keep pushing! 🖥️",
+      "{name} yells: SILVER STAR!! ★ YOU CAN DO THIS — no blue screens! 💪",
+      "{name} says: Silver Star! ★ Keep defragging, don't quit! ⚡",
+      "{name} says: SILVER STAR?! ★ Stay plugged in and keep going! 🔥"
+    ],
+    gold: [
+      "{name} says: LET'S FUCKING GO!! GOLD STAR.EXE!! ⭐ 🖥️",
+      "{name} saw your Gold Star! ⭐ ZERO CRASHES, PURE BEAST MODE!! 💾",
+      "{name} says: GOLD STAR BABY!! ⭐ MAX RAM ENERGY!! 🚀",
+      "{name} is celebrating your Gold Star! ⭐ UNSTOPPABLE!! 🏆"
+    ]
+  },
+  satc: {
+    none: [
+      "{name} says: Big would ghost, YOU DON'T GIVE UP!! 👠",
+      "{name} yells: Put the Cosmo down and KEEP TRYING!! 🍸",
+      "{name} says: And just like that... KEEP PUSHING!! ✨",
+      "{name} says: Fabulous people DON'T QUIT!! Keep swinging! 💅"
+    ],
+    bronze: [
+      "{name} says: Bronze Star! ★ Cute shoes, now keep walking! 👠",
+      "{name} yells: YOU CAN DO THIS!! Bronze is just brunch! 🥂",
+      "{name} says: Bronze Star! ★ Don't stop before the afterparty! 💅",
+      "{name} says: Bronze Star! ★ Keep strutting, no quitting! ✨"
+    ],
+    silver: [
+      "{name} says: Silver Star! ★ Serving main-character grit — keep going! 👠",
+      "{name} yells: SILVER STAR!! ★ YOU CAN DO THIS — keep pushing! 🍸",
+      "{name} says: Silver Star! ★ Don't settle now, stay locked in! 💅",
+      "{name} says: SILVER STAR?! ★ Keep strutting, don't quit! ⚡"
+    ],
+    gold: [
+      "{name} says: LET'S FUCKING GO!! GOLD STAR, DARLING!! ⭐ 👠",
+      "{name} saw your Gold Star! ⭐ PURE MANOLO BEAST MODE!! 🍸",
+      "{name} says: GOLD STAR BABY!! ⭐ ICONIC!! 🏆",
+      "{name} is celebrating your Gold Star! ⭐ UNSTOPPABLE!! 💅"
+    ]
+  }
 };
 
 let db = null;
@@ -50,6 +161,42 @@ let unsubNudges = null;
 let latestLocalStarSummary = null;
 let uiBound = false;
 let isEditingNickname = false;
+let socialAttachGen = 0;
+const handledNudgeIds = new Set();
+const cheerQueue = [];
+let activeCheerModal = null;
+
+function handledNudgesKey(uid) {
+  return `decideForMe_handledNudges_${uid}`;
+}
+
+function hasHandledNudge(uid, nudgeId) {
+  if (handledNudgeIds.has(nudgeId)) return true;
+  try {
+    const raw = localStorage.getItem(handledNudgesKey(uid));
+    if (!raw) return false;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) && arr.includes(nudgeId);
+  } catch {
+    return false;
+  }
+}
+
+function markNudgeHandled(uid, nudgeId) {
+  handledNudgeIds.add(nudgeId);
+  try {
+    const raw = localStorage.getItem(handledNudgesKey(uid));
+    const arr = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(arr) ? arr : [];
+    if (!list.includes(nudgeId)) {
+      list.push(nudgeId);
+      if (list.length > 50) list.splice(0, list.length - 50);
+      localStorage.setItem(handledNudgesKey(uid), JSON.stringify(list));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 function getLogicalToday() {
   return window.DecideForMeApp?.getLogicalTodayStr?.() || new Date().toISOString().slice(0, 10);
@@ -108,8 +255,15 @@ function markSentToday(toUid) {
   }
 }
 
-function resolveNudgeText(tier, messageIndex, fromName) {
-  const list = NUDGE_PRESETS[tier] || NUDGE_PRESETS.none;
+function getCurrentTheme() {
+  const t = document.documentElement?.dataset?.theme;
+  return t && THEME_NUDGE_PRESETS[t] ? t : "dark";
+}
+
+function resolveNudgeText(tier, messageIndex, fromName, senderTheme) {
+  const themeKey = senderTheme && THEME_NUDGE_PRESETS[senderTheme] ? senderTheme : "dark";
+  const themePresets = THEME_NUDGE_PRESETS[themeKey];
+  const list = themePresets[tier] || themePresets.none;
   const idx = Number.isInteger(messageIndex) && messageIndex >= 0 ? messageIndex % list.length : 0;
   return list[idx].replace("{name}", fromName || "A friend");
 }
@@ -166,7 +320,50 @@ function clearSocialListeners() {
   friendships = [];
   socialProfile = null;
   isEditingNickname = false;
+  cheerQueue.length = 0;
+  activeCheerModal = null;
+  document.getElementById("modal-cheer")?.classList.add("hidden");
   updateHeaderBadge();
+}
+
+function subscribeToFriendStatus(uid, attempt = 0) {
+  if (!db || !isNonGuestUser(currentUser)) return;
+  const stillAccepted = friendships.some(
+    (f) => f.status === "accepted" && f.otherUid === uid
+  );
+  if (!stillAccepted) return;
+
+  if (statusUnsubs.has(uid)) {
+    statusUnsubs.get(uid)();
+    statusUnsubs.delete(uid);
+  }
+
+  const unsub = onSnapshot(
+    doc(db, "dailyStatus", uid),
+    (snap) => {
+      if (snap.exists()) {
+        friendStatuses.set(uid, snap.data());
+      } else {
+        friendStatuses.delete(uid);
+      }
+      renderFriendsModal();
+    },
+    () => {
+      // Firestore terminates the listener on transient permission-denied while
+      // the accepted friendship propagates; clean up and retry with backoff.
+      if (statusUnsubs.get(uid) === unsub) {
+        statusUnsubs.delete(uid);
+      }
+      if (attempt < 5) {
+        setTimeout(() => {
+          if (!statusUnsubs.has(uid)) {
+            subscribeToFriendStatus(uid, attempt + 1);
+          }
+        }, 600 * (attempt + 1));
+      }
+    }
+  );
+  statusUnsubs.set(uid, unsub);
 }
 
 function syncFriendStatusListeners() {
@@ -187,21 +384,7 @@ function syncFriendStatusListeners() {
   // Add listeners for newly accepted friends
   for (const uid of acceptedUids) {
     if (statusUnsubs.has(uid)) continue;
-    const unsub = onSnapshot(
-      doc(db, "dailyStatus", uid),
-      (snap) => {
-        if (snap.exists()) {
-          friendStatuses.set(uid, snap.data());
-        } else {
-          friendStatuses.delete(uid);
-        }
-        renderFriendsModal();
-      },
-      () => {
-        // Ignore transient permission errors during friendship transitions
-      }
-    );
-    statusUnsubs.set(uid, unsub);
+    subscribeToFriendStatus(uid, 0);
   }
 }
 
@@ -252,9 +435,15 @@ function attachSocialListeners(user) {
     (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type !== "added") return;
+        const nudgeId = change.doc.id;
+        if (hasHandledNudge(user.uid, nudgeId)) {
+          deleteDoc(change.doc.ref).catch(() => {});
+          return;
+        }
+        markNudgeHandled(user.uid, nudgeId);
         const data = change.doc.data();
-        const text = resolveNudgeText(data.tier, data.messageIndex, data.fromName);
-        showSocialToast(text, 6500);
+        const text = resolveNudgeText(data.tier, data.messageIndex, data.fromName, data.senderTheme);
+        enqueueCheerModal({ text, tier: data.tier });
         deleteDoc(change.doc.ref).catch(() => {});
       });
     },
@@ -402,6 +591,11 @@ async function acceptFriendRequest(pairId) {
     status: "accepted",
     updatedAt: serverTimestamp()
   });
+  const fs = friendships.find((f) => f.pairId === pairId);
+  if (fs?.otherUid) {
+    fs.status = "accepted";
+    subscribeToFriendStatus(fs.otherUid, 0);
+  }
 }
 
 async function removeFriendship(pairId) {
@@ -414,7 +608,9 @@ async function sendCongratsNudge(friend) {
   const today = getLogicalToday();
   const status = friendStatuses.get(friend.otherUid);
   const { tier } = resolveFriendStarDisplay(status);
-  const presets = NUDGE_PRESETS[tier] || NUDGE_PRESETS.none;
+  const senderTheme = getCurrentTheme();
+  const themePresets = THEME_NUDGE_PRESETS[senderTheme] || THEME_NUDGE_PRESETS.dark;
+  const presets = themePresets[tier] || themePresets.none;
   const messageIndex = Math.floor(Math.random() * presets.length);
   const nudgeId = `${currentUser.uid}_${friend.otherUid}_${today}`;
 
@@ -424,6 +620,7 @@ async function sendCongratsNudge(friend) {
       toUid: friend.otherUid,
       fromName: socialProfile.displayName,
       tier,
+      senderTheme,
       messageIndex,
       date: today,
       createdAt: serverTimestamp()
@@ -451,6 +648,9 @@ export async function syncDailyStarStatus(summary) {
     streakDate: summary.logicalTodayStr,
     updatedAt: serverTimestamp()
   };
+  if (socialProfile.code) {
+    payload.code = socialProfile.code;
+  }
 
   if (summary.lastStarDate && summary.lastStarTier && summary.lastStarTier !== "none") {
     payload.lastStarDate = summary.lastStarDate;
@@ -487,6 +687,7 @@ export async function cleanupSocialAccountData(uid) {
 }
 
 export async function onAuthUserChanged(user) {
+  const gen = ++socialAttachGen;
   clearSocialListeners();
   currentUser = user || null;
   if (!isNonGuestUser(currentUser)) {
@@ -495,6 +696,7 @@ export async function onAuthUserChanged(user) {
   }
 
   await loadSocialProfile(currentUser);
+  if (gen !== socialAttachGen || currentUser?.uid !== user.uid) return;
   attachSocialListeners(currentUser);
   if (socialProfile && latestLocalStarSummary) {
     syncDailyStarStatus(latestLocalStarSummary).catch(() => {});
@@ -657,10 +859,17 @@ function renderFriendsModal() {
       topLine.className = "friend-row-top";
       const nameSpan = document.createElement("strong");
       nameSpan.textContent = friend.otherName;
+      topLine.append(nameSpan);
+      if (status?.code) {
+        const codeSpan = document.createElement("span");
+        codeSpan.className = "friend-code-tag";
+        codeSpan.textContent = `#${status.code}`;
+        topLine.append(codeSpan);
+      }
       const streakSpan = document.createElement("span");
       streakSpan.className = "friend-streak-pill";
       streakSpan.textContent = `🔥 ${streak}d`;
-      topLine.append(nameSpan, streakSpan);
+      topLine.append(streakSpan);
 
       const starBadge = renderStarBadge(tier, isYesterday);
       info.append(topLine, starBadge);
@@ -695,6 +904,45 @@ function renderFriendsModal() {
   }
 }
 
+function getCheerModalMeta(tier) {
+  if (tier === "gold") return { emoji: "⭐", title: "Gold Star Hype!" };
+  if (tier === "silver") return { emoji: "⚡", title: "Keep Pushing!" };
+  if (tier === "bronze") return { emoji: "💪", title: "Keep Going!" };
+  return { emoji: "🔥", title: "Don't Give Up!" };
+}
+
+function showNextCheerModal() {
+  const modal = document.getElementById("modal-cheer");
+  const emojiEl = document.getElementById("cheer-modal-emoji");
+  const titleEl = document.getElementById("modal-cheer-title");
+  const msgEl = document.getElementById("cheer-modal-message");
+  if (!modal || !msgEl) return;
+
+  if (cheerQueue.length === 0) {
+    activeCheerModal = null;
+    modal.classList.add("hidden");
+    return;
+  }
+
+  activeCheerModal = cheerQueue.shift();
+  const meta = getCheerModalMeta(activeCheerModal.tier);
+  if (emojiEl) emojiEl.textContent = meta.emoji;
+  if (titleEl) titleEl.textContent = meta.title;
+  msgEl.textContent = activeCheerModal.text;
+  modal.classList.remove("hidden");
+}
+
+function enqueueCheerModal(cheer) {
+  cheerQueue.push(cheer);
+  if (!activeCheerModal) {
+    showNextCheerModal();
+  }
+}
+
+function closeCheerModal() {
+  showNextCheerModal();
+}
+
 function openFriendsModal() {
   const modal = document.getElementById("modal-friends");
   if (!modal) return;
@@ -724,6 +972,17 @@ function bindFriendsUI() {
   const modal = document.getElementById("modal-friends");
   modal?.addEventListener("click", (e) => {
     if (e.target === modal) closeFriendsModal();
+  });
+
+  const cheerModal = document.getElementById("modal-cheer");
+  cheerModal?.addEventListener("click", (e) => {
+    if (e.target === cheerModal) closeCheerModal();
+  });
+  document.getElementById("btn-cheer-close")?.addEventListener("click", closeCheerModal);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && activeCheerModal) {
+      closeCheerModal();
+    }
   });
 
   document.getElementById("btn-friends-guest-google")?.addEventListener("click", () => {

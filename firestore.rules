@@ -188,10 +188,11 @@ service cloud.firestore {
       allow read: if isNonGuest() && (isOwner(userId) || isAcceptedFriend(userId));
       allow create, update: if isOwner(userId) &&
                                isNonGuest() &&
-                               hasOnlyAllowedFields(['lastStarDate', 'lastStarTier', 'streak', 'streakDate', 'updatedAt']) &&
+                               hasOnlyAllowedFields(['lastStarDate', 'lastStarTier', 'streak', 'streakDate', 'code', 'updatedAt']) &&
                                hasRequiredFields(['streak', 'streakDate', 'updatedAt']) &&
                                (!('lastStarDate' in request.resource.data) || request.resource.data.lastStarDate is string) &&
                                (!('lastStarTier' in request.resource.data) || request.resource.data.lastStarTier in ['none', 'bronze', 'silver', 'gold']) &&
+                               (!('code' in request.resource.data) || (request.resource.data.code is string && request.resource.data.code.matches('^[0-9]{6}$'))) &&
                                request.resource.data.streak is int &&
                                request.resource.data.streak >= 0 &&
                                request.resource.data.streakDate is string &&
@@ -203,7 +204,7 @@ service cloud.firestore {
     match /nudges/{nudgeId} {
       allow read, delete: if isNonGuest() && resource.data.toUid == request.auth.uid;
       allow create: if isNonGuest() &&
-                       hasOnlyAllowedFields(['fromUid', 'toUid', 'fromName', 'tier', 'messageIndex', 'date', 'createdAt']) &&
+                       hasOnlyAllowedFields(['fromUid', 'toUid', 'fromName', 'tier', 'senderTheme', 'messageIndex', 'date', 'createdAt']) &&
                        hasRequiredFields(['fromUid', 'toUid', 'fromName', 'tier', 'messageIndex', 'date', 'createdAt']) &&
                        request.resource.data.fromUid == request.auth.uid &&
                        request.resource.data.toUid is string &&
@@ -213,6 +214,7 @@ service cloud.firestore {
                        request.resource.data.fromName.size() >= 1 &&
                        request.resource.data.fromName.size() <= 24 &&
                        request.resource.data.tier in ['none', 'bronze', 'silver', 'gold'] &&
+                       (!('senderTheme' in request.resource.data) || request.resource.data.senderTheme in ['dark', 'astrology', 'tarot', 'win95', 'satc']) &&
                        request.resource.data.messageIndex is int &&
                        request.resource.data.messageIndex >= 0 &&
                        request.resource.data.date is string &&
