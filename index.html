@@ -78,6 +78,11 @@
           <svg class="ui-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           <span>Install App</span>
         </button>
+        <button type="button" class="btn btn-secondary btn-sm btn-friends-toggle" id="btn-friends" title="Friends &amp; Daily Stars">
+          <svg class="ui-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          <span class="friends-btn-label">Friends</span>
+          <span class="friends-badge-dot hidden" id="friends-badge-dot" aria-hidden="true"></span>
+        </button>
         <div class="account-menu-wrap" id="account-menu-wrap">
           <button type="button" class="btn btn-secondary btn-sm btn-account-toggle" id="btn-account-toggle" aria-haspopup="menu" aria-expanded="false" title="Cloud Sync &amp; Account">
             <span class="sync-dot" id="account-sync-dot" data-status="offline" aria-hidden="true"></span>
@@ -775,7 +780,7 @@
         <div>
           <div class="about-title-row">
             <h3 id="modal-about-title">DecideForMe</h3>
-            <span class="badge about-version-badge">v1.3.58</span>
+            <span class="badge about-version-badge">v1.3.60</span>
           </div>
           <p class="text-muted small">Activity Picker, Task Tracker &amp; Habit Logger</p>
         </div>
@@ -788,7 +793,7 @@
       <dl class="about-meta-list">
         <div class="about-meta-row">
           <dt>Version</dt>
-          <dd>1.3.58</dd>
+          <dd>1.3.60</dd>
         </div>
         <div class="about-meta-row">
           <dt>Author</dt>
@@ -865,6 +870,92 @@
           <button type="submit" class="btn btn-danger" id="btn-reauth-submit">Delete Account</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Friends & Daily Stars Modal -->
+  <div class="modal-backdrop hidden" id="modal-friends" role="dialog" aria-modal="true" aria-labelledby="modal-friends-title">
+    <div class="modal-card modal-friends-card">
+      <div class="modal-friends-header">
+        <h3 id="modal-friends-title">Friends</h3>
+        <button type="button" class="btn-icon" id="btn-friends-close" title="Close" aria-label="Close Friends modal">✕</button>
+      </div>
+
+      <p class="username-auth-error hidden" id="friends-error" role="alert"></p>
+
+      <!-- Guest Prompt View -->
+      <div id="friends-guest-view" class="friends-guest-view hidden">
+        <p class="confirm-message">
+          Sign in with Google or a Username account to get your 6-digit friend code, see friends' daily stars &amp; streaks, and send congrats!
+        </p>
+        <div class="friends-guest-actions">
+          <button type="button" class="btn btn-primary" id="btn-friends-guest-google">Sign in with Google</button>
+          <button type="button" class="btn btn-secondary" id="btn-friends-guest-username">Sign in with Username</button>
+        </div>
+      </div>
+
+      <!-- First-Time Nickname Setup / Edit View -->
+      <div id="friends-setup-view" class="friends-setup-view hidden">
+        <p class="confirm-message" id="friends-setup-prompt">
+          Pick a nickname so your friends know who's cheering them on:
+        </p>
+        <form id="form-friends-nickname">
+          <label class="form-label" for="input-friends-nickname">Nickname</label>
+          <input type="text" id="input-friends-nickname" class="input-text" placeholder="e.g. John" maxlength="24" required />
+          <div class="modal-actions">
+            <button type="button" class="btn btn-ghost hidden" id="btn-friends-cancel-edit">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-friends-save-nickname">Save &amp; Get Friend Code</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Main Friends View -->
+      <div id="friends-main-view" class="friends-main-view hidden">
+        <div class="friends-identity-bar">
+          <div>
+            <span class="text-muted small">Your Friend Code</span>
+            <div class="friends-code-row">
+              <strong class="friends-code-value" id="friends-my-code">------</strong>
+              <button type="button" class="btn btn-secondary btn-xs" id="btn-friends-copy-code">Copy</button>
+            </div>
+          </div>
+          <div class="friends-name-block">
+            <span class="text-muted small">Nickname</span>
+            <div class="friends-code-row">
+              <span id="friends-my-name">Friend</span>
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-friends-edit-name">Edit</button>
+            </div>
+          </div>
+        </div>
+
+        <form id="form-friends-add" class="friends-add-form">
+          <input
+            type="text"
+            id="input-friends-code"
+            class="input-text"
+            placeholder="Enter 6-digit friend code"
+            inputmode="numeric"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            aria-label="6-digit friend code"
+            required
+          />
+          <button type="submit" class="btn btn-primary btn-sm" id="btn-friends-add-submit">Add</button>
+        </form>
+
+        <div id="friends-pending-section" class="friends-section hidden">
+          <h4 class="friends-section-title">Pending Requests</h4>
+          <ul class="friends-list" id="friends-pending-list"></ul>
+        </div>
+
+        <div class="friends-section">
+          <h4 class="friends-section-title">Friends</h4>
+          <p class="text-muted small hidden" id="friends-empty-state">
+            No friends yet. Share your 6-digit code or add a friend above!
+          </p>
+          <ul class="friends-list" id="friends-accepted-list"></ul>
+        </div>
+      </div>
     </div>
   </div>
 

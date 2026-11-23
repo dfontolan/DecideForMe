@@ -39,6 +39,24 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Check that the user is signed in with a non-guest provider (Google or Username)
+    function isNonGuest() {
+      return isAuthenticated() &&
+             request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Deterministic friendship document ID for two UIDs
+    function friendshipPairId(uidA, uidB) {
+      return uidA < uidB ? uidA + '_' + uidB : uidB + '_' + uidA;
+    }
+
+    // Check if the caller and otherUid have an accepted friendship
+    function isAcceptedFriend(otherUid) {
+      let pairId = friendshipPairId(request.auth.uid, otherUid);
+      return exists(/databases/$(database)/documents/friendships/$(pairId)) &&
+             get(/databases/$(database)/documents/friendships/$(pairId)).data.status == 'accepted';
+    }
+
     // Validate that all required fields exist
     function hasRequiredFields(fields) {
       return request.resource.data.keys().hasAll(fields);
@@ -94,6 +112,111 @@ service cloud.firestore {
       allow create: if isOwner(userId) && isValidUserState(request.resource.data);
       allow update: if isOwner(userId) && isValidUserState(request.resource.data);
       allow delete: if isOwner(userId);
+    }
+
+    // 6-digit friend code lookup (get by exact code only; no listing)
+    match /friendCodes/{code} {
+      allow get: if isNonGuest();
+      allow list: if false;
+      allow create: if isNonGuest() &&
+                       code.matches('^[0-9]{6}$') &&
+                       hasOnlyAllowedFields(['uid', 'displayName', 'createdAt']) &&
+                       hasRequiredFields(['uid', 'displayName', 'createdAt']) &&
+                       request.resource.data.uid == request.auth.uid &&
+                       request.resource.data.displayName is string &&
+                       request.resource.data.displayName.size() >= 1 &&
+                       request.resource.data.displayName.size() <= 24 &&
+                       request.resource.data.createdAt is timestamp;
+      allow update: if isNonGuest() &&
+                       resource.data.uid == request.auth.uid &&
+                       request.resource.data.uid == request.auth.uid &&
+                       hasOnlyAllowedFields(['uid', 'displayName', 'createdAt']) &&
+                       hasRequiredFields(['uid', 'displayName', 'createdAt']) &&
+                       request.resource.data.displayName is string &&
+                       request.resource.data.displayName.size() >= 1 &&
+                       request.resource.data.displayName.size() <= 24;
+      allow delete: if isNonGuest() && resource.data.uid == request.auth.uid;
+    }
+
+    // Owner-only social profile (stores own 6-digit code & nickname)
+    match /socialProfiles/{userId} {
+      allow read: if isOwner(userId) && isNonGuest();
+      allow create, update: if isOwner(userId) &&
+                               isNonGuest() &&
+                               hasOnlyAllowedFields(['code', 'displayName', 'updatedAt']) &&
+                               hasRequiredFields(['code', 'displayName', 'updatedAt']) &&
+                               request.resource.data.code is string &&
+                               request.resource.data.code.matches('^[0-9]{6}$') &&
+                               request.resource.data.displayName is string &&
+                               request.resource.data.displayName.size() >= 1 &&
+                               request.resource.data.displayName.size() <= 24 &&
+                               request.resource.data.updatedAt is timestamp;
+      allow delete: if isOwner(userId) && isNonGuest();
+    }
+
+    // Friendships & pending friend requests
+    match /friendships/{pairId} {
+      allow read: if isNonGuest() && (request.auth.uid in resource.data.users);
+      allow create: if isNonGuest() &&
+                       hasOnlyAllowedFields(['users', 'status', 'requestedBy', 'names', 'createdAt', 'updatedAt']) &&
+                       hasRequiredFields(['users', 'status', 'requestedBy', 'names', 'createdAt', 'updatedAt']) &&
+                       request.resource.data.users is list &&
+                       request.resource.data.users.size() == 2 &&
+                       request.resource.data.users[0] is string &&
+                       request.resource.data.users[1] is string &&
+                       request.resource.data.users[0] < request.resource.data.users[1] &&
+                       pairId == request.resource.data.users[0] + '_' + request.resource.data.users[1] &&
+                       request.auth.uid in request.resource.data.users &&
+                       request.resource.data.requestedBy == request.auth.uid &&
+                       request.resource.data.status == 'pending' &&
+                       request.resource.data.names is map;
+      allow update: if isNonGuest() &&
+                       (request.auth.uid in resource.data.users) &&
+                       hasOnlyAllowedFields(['users', 'status', 'requestedBy', 'names', 'createdAt', 'updatedAt']) &&
+                       request.resource.data.users == resource.data.users &&
+                       request.resource.data.requestedBy == resource.data.requestedBy &&
+                       ((resource.data.status == 'pending' &&
+                         request.resource.data.status == 'accepted' &&
+                         request.auth.uid != resource.data.requestedBy) ||
+                        (resource.data.status == request.resource.data.status));
+      allow delete: if isNonGuest() && (request.auth.uid in resource.data.users);
+    }
+
+    // Daily star tier & streak summary (readable only by owner or accepted friends)
+    match /dailyStatus/{userId} {
+      allow read: if isNonGuest() && (isOwner(userId) || isAcceptedFriend(userId));
+      allow create, update: if isOwner(userId) &&
+                               isNonGuest() &&
+                               hasOnlyAllowedFields(['lastStarDate', 'lastStarTier', 'streak', 'streakDate', 'updatedAt']) &&
+                               hasRequiredFields(['streak', 'streakDate', 'updatedAt']) &&
+                               (!('lastStarDate' in request.resource.data) || request.resource.data.lastStarDate is string) &&
+                               (!('lastStarTier' in request.resource.data) || request.resource.data.lastStarTier in ['none', 'bronze', 'silver', 'gold']) &&
+                               request.resource.data.streak is int &&
+                               request.resource.data.streak >= 0 &&
+                               request.resource.data.streakDate is string &&
+                               request.resource.data.updatedAt is timestamp;
+      allow delete: if isOwner(userId) && isNonGuest();
+    }
+
+    // 1-per-day motivational nudges/congrats between accepted friends
+    match /nudges/{nudgeId} {
+      allow read, delete: if isNonGuest() && resource.data.toUid == request.auth.uid;
+      allow create: if isNonGuest() &&
+                       hasOnlyAllowedFields(['fromUid', 'toUid', 'fromName', 'tier', 'messageIndex', 'date', 'createdAt']) &&
+                       hasRequiredFields(['fromUid', 'toUid', 'fromName', 'tier', 'messageIndex', 'date', 'createdAt']) &&
+                       request.resource.data.fromUid == request.auth.uid &&
+                       request.resource.data.toUid is string &&
+                       request.resource.data.toUid != request.auth.uid &&
+                       isAcceptedFriend(request.resource.data.toUid) &&
+                       request.resource.data.fromName is string &&
+                       request.resource.data.fromName.size() >= 1 &&
+                       request.resource.data.fromName.size() <= 24 &&
+                       request.resource.data.tier in ['none', 'bronze', 'silver', 'gold'] &&
+                       request.resource.data.messageIndex is int &&
+                       request.resource.data.messageIndex >= 0 &&
+                       request.resource.data.date is string &&
+                       nudgeId == request.auth.uid + '_' + request.resource.data.toUid + '_' + request.resource.data.date &&
+                       request.resource.data.createdAt is timestamp;
     }
 
     // Default deny all other paths

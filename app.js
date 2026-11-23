@@ -365,12 +365,58 @@ function loadState() {
   }
 }
 
+let lastSyncedSocialSummaryJson = "";
+
+function getSocialStarSummary() {
+  const logicalTodayStr = getLogicalTodayStr();
+  const todayProgress = getTodayStarProgress();
+  let lastStarDate = null;
+  let lastStarTier = "none";
+
+  if (todayProgress.starTier !== "none") {
+    lastStarDate = logicalTodayStr;
+    lastStarTier = todayProgress.starTier;
+  } else {
+    const yDate = getLogicalTodayDate();
+    yDate.setDate(yDate.getDate() - 1);
+    const yStr = toLocalDateStr(yDate);
+    const yHasActivity = state.logs.some((l) => l.date === yStr);
+    const yStar = getStarStatusForDate(yStr, yHasActivity);
+    const yTier = yStar.hasGoldStar
+      ? "gold"
+      : yStar.hasSilverStar
+        ? "silver"
+        : yStar.hasBronzeStar
+          ? "bronze"
+          : "none";
+    if (yTier !== "none") {
+      lastStarDate = yStr;
+      lastStarTier = yTier;
+    }
+  }
+
+  const { currentStreak } = computeStreakAndFreezes();
+  return { logicalTodayStr, lastStarDate, lastStarTier, currentStreak };
+}
+
+function syncSocialStarSummaryIfChanged() {
+  if (!window.DecideForMeSocial || typeof window.DecideForMeSocial.syncDailyStarStatus !== "function") {
+    return;
+  }
+  const summary = getSocialStarSummary();
+  const json = JSON.stringify(summary);
+  if (json === lastSyncedSocialSummaryJson) return;
+  lastSyncedSocialSummaryJson = json;
+  window.DecideForMeSocial.syncDailyStarStatus(summary);
+}
+
 function saveState(skipCloud = false) {
   try {
     localStorage.setItem(getStorageKeyForScope(), JSON.stringify(state));
     if (!skipCloud && window.DecideForMeCloud && typeof window.DecideForMeCloud.scheduleSave === "function") {
       window.DecideForMeCloud.scheduleSave(state);
     }
+    syncSocialStarSummaryIfChanged();
   } catch (err) {
     console.error("Failed to save state:", err);
   }
@@ -6260,6 +6306,7 @@ async function checkForAppUpdates() {
         "./styles.css",
         "./app.js",
         "./firebase-sync.js",
+        "./firebase-social.js",
         "./manifest.json"
       ];
 
@@ -6482,7 +6529,8 @@ window.DecideForMeApp = {
     applyTheme();
     renderAll();
   },
-  showToast
+  showToast,
+  getLogicalTodayStr
 };
 
 // Initialize App
@@ -6491,4 +6539,23 @@ document.addEventListener("DOMContentLoaded", () => {
   initEvents();
   initPwa();
   renderAll();
+  syncSocialStarSummaryIfChanged();
+
+  // Fallback binding for Friends modal so guest prompt always opens even if Firebase module is still loading or cached
+  document.getElementById("btn-friends")?.addEventListener("click", () => {
+    if (typeof window.DecideForMeSocial?.openFriendsModal === "function") {
+      window.DecideForMeSocial.openFriendsModal();
+      return;
+    }
+    const modal = document.getElementById("modal-friends");
+    if (!modal) return;
+    document.getElementById("friends-guest-view")?.classList.remove("hidden");
+    document.getElementById("friends-setup-view")?.classList.add("hidden");
+    document.getElementById("friends-main-view")?.classList.add("hidden");
+    document.getElementById("friends-error")?.classList.add("hidden");
+    modal.classList.remove("hidden");
+  });
+  document.getElementById("btn-friends-close")?.addEventListener("click", () => {
+    document.getElementById("modal-friends")?.classList.add("hidden");
+  });
 });

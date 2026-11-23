@@ -5617,3 +5617,171 @@ body {
     transition: none !important;
   }
 }
+
+
+/* =========================================
+   Friends & Daily Stars Modal
+   ========================================= */
+.btn-friends-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.friends-badge-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--danger, #ef4444);
+  border: 2px solid var(--bg-surface, #161922);
+}
+
+.modal-friends-card {
+  max-width: 440px;
+  width: 100%;
+}
+
+.modal-friends-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-friends-header h3 {
+  margin: 0;
+}
+
+.friends-guest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.friends-identity-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
+  margin-bottom: 14px;
+}
+
+.friends-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.friends-code-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+}
+
+.friends-add-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.friends-add-form .input-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.friends-section {
+  margin-top: 12px;
+}
+
+.friends-section-title {
+  margin: 0 0 8px 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #9aa4b2);
+}
+
+.friends-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.02));
+}
+
+.friend-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.friend-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.friend-streak-pill {
+  font-size: 0.78rem;
+  color: var(--text-muted, #9aa4b2);
+}
+
+.friend-star-pill {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.friend-star-pill.star-tier-gold {
+  color: #eab308;
+}
+
+.friend-star-pill.star-tier-silver {
+  color: #cbd5e1;
+}
+
+.friend-star-pill.star-tier-bronze {
+  color: #d97706;
+}
+
+.friend-star-pill.star-tier-none {
+  color: var(--text-muted, #9aa4b2);
+}
+
+.friend-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .friends-btn-label {
+    display: none;
+  }
+}

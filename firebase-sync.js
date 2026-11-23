@@ -38,6 +38,11 @@ import {
   setUserProperties,
   setUserId
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-analytics.js";
+import {
+  initSocial,
+  onAuthUserChanged,
+  cleanupSocialAccountData
+} from "./firebase-social.js";
 
 const firebaseConfig = {
   projectId: "decideforme-55674",
@@ -81,6 +86,7 @@ try {
 } catch (err) {
   db = getFirestore(app);
 }
+initSocial({ firestore: db });
 
 let currentUser = null;
 let unsubscribeDoc = null;
@@ -1003,6 +1009,7 @@ async function deleteAccount() {
 
   try {
     try {
+      await cleanupSocialAccountData(user.uid);
       await deleteDoc(doc(db, "users", user.uid));
     } catch (docErr) {
       console.warn("Could not delete Firestore doc before auth deletion:", docErr);
@@ -1014,6 +1021,7 @@ async function deleteAccount() {
       if (authErr.code === "auth/requires-recent-login") {
         if (getAccountType(user) === "google") {
           await reauthenticateWithPopup(user, googleProvider);
+          await cleanupSocialAccountData(user.uid);
           await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
           await deleteUser(user);
         } else {
@@ -1023,6 +1031,7 @@ async function deleteAccount() {
             await attachUserSync(user);
             return;
           }
+          await cleanupSocialAccountData(user.uid);
           await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
           await deleteUser(user);
         }
@@ -1058,6 +1067,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     pendingState = null;
     updateAccountUI(null);
+    onAuthUserChanged(null).catch(() => {});
     if (unsubscribeDoc) {
       unsubscribeDoc();
       unsubscribeDoc = null;
@@ -1093,6 +1103,7 @@ onAuthStateChanged(auth, async (user) => {
   }
   syncAnalyticsUser(user);
   updateAccountUI(user);
+  onAuthUserChanged(user).catch(() => {});
   await attachUserSync(user);
 });
 
