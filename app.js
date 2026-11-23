@@ -3909,6 +3909,7 @@ function renderCalendar() {
 
     rerollSummaryEl.textContent = `🎲 ${weekRerollTotal}`;
     rerollSummaryEl.classList.toggle("badge-reroll", weekRerollTotal > 0);
+    rerollSummaryEl.classList.remove("hidden");
   } else {
     titleEl.textContent = `${MONTH_NAMES[calMonth]} ${calYear}`;
 
@@ -4007,6 +4008,7 @@ function renderCalendar() {
 
     rerollSummaryEl.textContent = `🎲 ${monthRerollTotal}`;
     rerollSummaryEl.classList.toggle("badge-reroll", monthRerollTotal > 0);
+    rerollSummaryEl.classList.toggle("hidden", monthRerollTotal === 0);
 
     const bronzeCountEl = document.getElementById("cal-month-bronze-count");
     const silverCountEl = document.getElementById("cal-month-silver-count");
