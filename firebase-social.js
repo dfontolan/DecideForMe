@@ -155,10 +155,12 @@ let currentUser = null;
 let socialProfile = null; // { code, displayName }
 let friendships = []; // [{ pairId, otherUid, otherName, status, requestedBy }]
 const friendStatuses = new Map(); // uid -> { lastStarDate, lastStarTier, streak, streakDate }
-const statusUnsubs = new Map(); // uid -> unsubscribe fn
+const FRIEND_STATUS_TTL_MS = 60 * 1000;
+const friendStatusFetchedAt = new Map(); // uid -> timestamp ms
 let unsubFriendships = null;
 let unsubNudges = null;
 let latestLocalStarSummary = null;
+let lastSyncedStarJson = "";
 let uiBound = false;
 let isEditingNickname = false;
 let isEditingFriends = false;
@@ -316,6 +318,11 @@ function updateHeaderBadge() {
   dot.classList.toggle("hidden", !hasPendingIncoming);
 }
 
+function isFriendsModalOpen() {
+  const modal = document.getElementById("modal-friends");
+  return Boolean(modal && !modal.classList.contains("hidden"));
+}
+
 function clearSocialListeners() {
   if (unsubFriendships) {
     unsubFriendships();
@@ -325,13 +332,11 @@ function clearSocialListeners() {
     unsubNudges();
     unsubNudges = null;
   }
-  for (const unsub of statusUnsubs.values()) {
-    unsub();
-  }
-  statusUnsubs.clear();
   friendStatuses.clear();
+  friendStatusFetchedAt.clear();
   friendships = [];
   socialProfile = null;
+  lastSyncedStarJson = "";
   isEditingNickname = false;
   cheerQueue.length = 0;
   activeCheerModal = null;
@@ -339,44 +344,30 @@ function clearSocialListeners() {
   updateHeaderBadge();
 }
 
-function subscribeToFriendStatus(uid, attempt = 0) {
-  if (!db || !isNonGuestUser(currentUser)) return;
+async function fetchFriendStatusOnce(uid, attempt = 0) {
+  if (!db || !isNonGuestUser(currentUser) || !isFriendsModalOpen()) return;
   const stillAccepted = friendships.some(
     (f) => f.status === "accepted" && f.otherUid === uid
   );
   if (!stillAccepted) return;
 
-  if (statusUnsubs.has(uid)) {
-    statusUnsubs.get(uid)();
-    statusUnsubs.delete(uid);
-  }
-
-  const unsub = onSnapshot(
-    doc(db, "dailyStatus", uid),
-    (snap) => {
-      if (snap.exists()) {
-        friendStatuses.set(uid, snap.data());
-      } else {
-        friendStatuses.delete(uid);
-      }
-      renderFriendsModal();
-    },
-    () => {
-      // Firestore terminates the listener on transient permission-denied while
-      // the accepted friendship propagates; clean up and retry with backoff.
-      if (statusUnsubs.get(uid) === unsub) {
-        statusUnsubs.delete(uid);
-      }
-      if (attempt < 5) {
-        setTimeout(() => {
-          if (!statusUnsubs.has(uid)) {
-            subscribeToFriendStatus(uid, attempt + 1);
-          }
-        }, 600 * (attempt + 1));
-      }
+  try {
+    const snap = await getDoc(doc(db, "dailyStatus", uid));
+    friendStatusFetchedAt.set(uid, Date.now());
+    if (snap.exists()) {
+      friendStatuses.set(uid, snap.data());
+    } else {
+      friendStatuses.delete(uid);
     }
-  );
-  statusUnsubs.set(uid, unsub);
+    renderFriendsModal();
+  } catch (err) {
+    // Retry briefly on transient permission-denied while accepted friendship propagates
+    if (err?.code === "permission-denied" && attempt < 3 && isFriendsModalOpen()) {
+      setTimeout(() => {
+        fetchFriendStatusOnce(uid, attempt + 1);
+      }, 600 * (attempt + 1));
+    }
+  }
 }
 
 function syncFriendStatusListeners() {
@@ -385,19 +376,28 @@ function syncFriendStatusListeners() {
     friendships.filter((f) => f.status === "accepted").map((f) => f.otherUid)
   );
 
-  // Remove listeners for unfriended users
-  for (const [uid, unsub] of statusUnsubs.entries()) {
+  // Prune cached statuses and TTLs for unfriended users
+  for (const uid of friendStatuses.keys()) {
     if (!acceptedUids.has(uid)) {
-      unsub();
-      statusUnsubs.delete(uid);
       friendStatuses.delete(uid);
     }
   }
+  for (const uid of friendStatusFetchedAt.keys()) {
+    if (!acceptedUids.has(uid)) {
+      friendStatusFetchedAt.delete(uid);
+    }
+  }
 
-  // Add listeners for newly accepted friends
+  // Only fetch dailyStatus while the Friends modal is open, respecting the 60s TTL
+  if (!isFriendsModalOpen()) return;
+
+  const now = Date.now();
   for (const uid of acceptedUids) {
-    if (statusUnsubs.has(uid)) continue;
-    subscribeToFriendStatus(uid, 0);
+    const lastFetched = friendStatusFetchedAt.get(uid) || 0;
+    if (now - lastFetched >= FRIEND_STATUS_TTL_MS) {
+      friendStatusFetchedAt.set(uid, now);
+      fetchFriendStatusOnce(uid, 0);
+    }
   }
 }
 
@@ -466,13 +466,57 @@ function attachSocialListeners(user) {
   );
 }
 
+function socialProfileCacheKey(uid) {
+  return `decideForMe_socialProfile_${uid}`;
+}
+
+function readCachedSocialProfile(uid) {
+  if (!uid) return null;
+  try {
+    const raw = localStorage.getItem(socialProfileCacheKey(uid));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.code === "string" &&
+      /^\d{6}$/.test(parsed.code) &&
+      typeof parsed.displayName === "string" &&
+      parsed.displayName.length >= 1
+    ) {
+      return { code: parsed.code, displayName: parsed.displayName };
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return null;
+}
+
+function writeCachedSocialProfile(uid, profile) {
+  if (!uid) return;
+  try {
+    if (profile && profile.code && profile.displayName) {
+      localStorage.setItem(socialProfileCacheKey(uid), JSON.stringify(profile));
+    } else {
+      localStorage.removeItem(socialProfileCacheKey(uid));
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 async function loadSocialProfile(user) {
   if (!db || !isNonGuestUser(user)) return null;
+  const cached = readCachedSocialProfile(user.uid);
+  if (cached) {
+    socialProfile = cached;
+    return socialProfile;
+  }
   try {
     const snap = await getDoc(doc(db, "socialProfiles", user.uid));
     if (snap.exists()) {
       const data = snap.data();
       socialProfile = { code: data.code, displayName: data.displayName };
+      writeCachedSocialProfile(user.uid, socialProfile);
       return socialProfile;
     }
   } catch (err) {
@@ -507,6 +551,7 @@ async function provisionSocialProfile(nickname) {
       }).catch(() => {});
     }
     socialProfile = { ...socialProfile, displayName: cleanName };
+    writeCachedSocialProfile(currentUser.uid, socialProfile);
     return socialProfile;
   }
 
@@ -542,6 +587,7 @@ async function provisionSocialProfile(nickname) {
   });
 
   socialProfile = { code: claimedCode, displayName: cleanName };
+  writeCachedSocialProfile(currentUser.uid, socialProfile);
   if (latestLocalStarSummary) {
     syncDailyStarStatus(latestLocalStarSummary).catch(() => {});
   }
@@ -607,7 +653,8 @@ async function acceptFriendRequest(pairId) {
   const fs = friendships.find((f) => f.pairId === pairId);
   if (fs?.otherUid) {
     fs.status = "accepted";
-    subscribeToFriendStatus(fs.otherUid, 0);
+    friendStatusFetchedAt.delete(fs.otherUid);
+    syncFriendStatusListeners();
   }
 }
 
@@ -652,10 +699,15 @@ async function sendCongratsNudge(friend) {
   }
 }
 
+function lastStarSyncStorageKey(uid) {
+  return `decideForMe_lastStarSync_${uid}`;
+}
+
 export async function syncDailyStarStatus(summary) {
   latestLocalStarSummary = summary;
   if (!db || !isNonGuestUser(currentUser) || !socialProfile) return;
 
+  const hasStar = Boolean(summary.lastStarDate && summary.lastStarTier && summary.lastStarTier !== "none");
   const payload = {
     streak: Math.max(0, Number(summary.currentStreak) || 0),
     streakDate: summary.logicalTodayStr,
@@ -665,13 +717,37 @@ export async function syncDailyStarStatus(summary) {
     payload.code = socialProfile.code;
   }
 
-  if (summary.lastStarDate && summary.lastStarTier && summary.lastStarTier !== "none") {
+  if (hasStar) {
     payload.lastStarDate = summary.lastStarDate;
     payload.lastStarTier = summary.lastStarTier;
   }
 
+  const syncSignature = JSON.stringify({
+    streak: payload.streak,
+    streakDate: payload.streakDate,
+    code: payload.code || null,
+    lastStarDate: hasStar ? payload.lastStarDate : null,
+    lastStarTier: hasStar ? payload.lastStarTier : null
+  });
+
+  if (syncSignature === lastSyncedStarJson) return;
+  try {
+    if (localStorage.getItem(lastStarSyncStorageKey(currentUser.uid)) === syncSignature) {
+      lastSyncedStarJson = syncSignature;
+      return;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+
   try {
     await setDoc(doc(db, "dailyStatus", currentUser.uid), payload, { merge: true });
+    lastSyncedStarJson = syncSignature;
+    try {
+      localStorage.setItem(lastStarSyncStorageKey(currentUser.uid), syncSignature);
+    } catch {
+      // Ignore storage errors
+    }
   } catch (err) {
     console.warn("Failed to sync daily star status:", err);
   }
@@ -679,6 +755,12 @@ export async function syncDailyStarStatus(summary) {
 
 export async function cleanupSocialAccountData(uid) {
   if (!db || !uid) return;
+  writeCachedSocialProfile(uid, null);
+  try {
+    localStorage.removeItem(lastStarSyncStorageKey(uid));
+  } catch {
+    // Ignore storage errors
+  }
   try {
     const profileSnap = await getDoc(doc(db, "socialProfiles", uid));
     if (profileSnap.exists()) {
@@ -1027,6 +1109,7 @@ function openFriendsModal() {
   if (!modal) return;
   isEditingNickname = false;
   modal.classList.remove("hidden");
+  syncFriendStatusListeners();
   renderFriendsModal();
 }
 
