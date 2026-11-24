@@ -11,7 +11,6 @@ import {
   GoogleAuthProvider,
   EmailAuthProvider,
   onAuthStateChanged,
-  signInAnonymously,
   signInWithPopup,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -29,6 +28,7 @@ import {
   getDoc,
   setDoc,
   deleteDoc,
+  increment,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import {
@@ -165,7 +165,7 @@ let lastSyncedJson = "";
 let pendingPreSignInLocalState = null;
 let isExplicitSignOut = false;
 let attachGeneration = 0;
-let guestSignInPromise = null;
+let initialAuthResolved = false;
 
 const AUTH_OWNER_KEY = "decideForMe_authOwner_v1";
 
@@ -202,6 +202,15 @@ function clearExpectedAuthOwner() {
 
 let sessionBannerBound = false;
 let sessionBannerAccountType = null;
+const SESSION_EXPIRED_GRACE_MS = 2000;
+let sessionExpiredTimer = null;
+
+function clearSessionExpiredTimer() {
+  if (sessionExpiredTimer) {
+    clearTimeout(sessionExpiredTimer);
+    sessionExpiredTimer = null;
+  }
+}
 
 function bindSessionExpiredBanner() {
   if (sessionBannerBound) return;
@@ -235,20 +244,41 @@ function hideSessionExpiredBanner() {
   document.getElementById("session-expired-banner")?.classList.add("hidden");
 }
 
-function ensureGuestAuth() {
-  if (currentUser || auth.currentUser) return Promise.resolve(currentUser || auth.currentUser);
-  if (guestSignInPromise) return guestSignInPromise;
-  guestSignInPromise = signInAnonymously(auth)
-    .then((cred) => cred.user)
-    .catch((err) => {
-      console.warn("Anonymous guest sign-in failed:", err);
-      setSyncStatus("offline", "Local only");
-      return null;
-    })
-    .finally(() => {
-      guestSignInPromise = null;
-    });
-  return guestSignInPromise;
+const VISIT_STAT_SESSION_KEY = "dfm_visit_stat_counted_v1";
+
+function getLocalStatDateStr(dateObj = new Date()) {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const day = String(dateObj.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function incrementDailyStat(fieldName) {
+  try {
+    const dateStr = getLocalStatDateStr();
+    setDoc(
+      doc(db, "stats", dateStr),
+      {
+        [fieldName]: increment(1),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    ).catch(() => {});
+  } catch {
+    // Ignore stats errors
+  }
+}
+
+function recordDailyVisitStat(isGuest) {
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      if (sessionStorage.getItem(VISIT_STAT_SESSION_KEY)) return;
+      sessionStorage.setItem(VISIT_STAT_SESSION_KEY, "1");
+    }
+  } catch {
+    // Ignore sessionStorage errors
+  }
+  incrementDailyStat(isGuest ? "guestVisits" : "userVisits");
 }
 
 function notifyToast(msg) {
@@ -270,6 +300,24 @@ function syncAnalyticsUser(user) {
 }
 
 function trackEvent(eventName, params = {}) {
+  const isGuest = !currentUser || currentUser.isAnonymous;
+  const STAT_FIELD_BY_EVENT = {
+    decide_spin: isGuest ? "guestSpins" : "userSpins",
+    activity_completed: isGuest ? "guestCompletions" : "userCompletions",
+    daily_completed: isGuest ? "guestCompletions" : "userCompletions",
+    todo_completed: isGuest ? "guestCompletions" : "userCompletions",
+    procrastination_completed: isGuest ? "guestCompletions" : "userCompletions",
+    daily_star_earned: isGuest ? "guestActions" : "userActions",
+    todo_added: isGuest ? "guestActions" : "userActions",
+    activity_added: isGuest ? "guestActions" : "userActions",
+    list_created: isGuest ? "guestActions" : "userActions",
+    pwa_installed: isGuest ? "guestActions" : "userActions"
+  };
+  const statField = STAT_FIELD_BY_EVENT[eventName];
+  if (statField) {
+    incrementDailyStat(statField);
+  }
+
   if (!analytics) return;
   try {
     logEvent(analytics, eventName, {
@@ -465,15 +513,13 @@ function updateAccountUI(user) {
     if (labelEl) labelEl.textContent = "Guest";
     if (titleEl) titleEl.textContent = "Guest Mode";
     if (subtitleEl) {
-      subtitleEl.textContent = user
-        ? "Backed up in cloud • Sign in to sync across devices"
-        : "Sign in to sync across devices";
+      subtitleEl.textContent = "Local only • Sign in to back up & sync across devices";
     }
     if (googleBtn) googleBtn.classList.remove("hidden");
     if (usernameBtn) usernameBtn.classList.remove("hidden");
     if (signOutBtn) signOutBtn.classList.add("hidden");
     if (!user) {
-      setSyncStatus("offline", "Connecting...");
+      setSyncStatus("offline", "Local only");
     }
     return;
   }
@@ -728,10 +774,7 @@ function scheduleSave(stateObj) {
       setSyncStatus("offline", "Session expired");
       return;
     }
-    if (isUntouchedDefaultState(sanitized)) return;
-    pendingState = sanitized;
-    setSyncStatus("syncing");
-    ensureGuestAuth();
+    setSyncStatus("offline", "Local only");
     return;
   }
   if (JSON.stringify(sanitized) === lastSyncedJson && !pendingState) {
@@ -987,7 +1030,7 @@ async function signOut() {
     lastUserSyncAt = 0;
     await firebaseSignOut(auth);
     window.DecideForMeApp?.resetToDefaultState();
-    notifyToast("Signed out. Switched to a fresh Guest session.");
+    notifyToast("Signed out. Switched to Local-only Guest mode.");
   } catch (err) {
     isExplicitSignOut = false;
     console.error("Sign out error:", err);
@@ -1156,48 +1199,69 @@ async function deleteAccount() {
 }
 
 onAuthStateChanged(auth, async (user) => {
+  if (user && user.isAnonymous) {
+    firebaseSignOut(auth).catch(() => {});
+    return;
+  }
+
   if (!user) {
     attachGeneration++;
     currentUser = null;
-    syncAnalyticsUser(null);
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
     pendingState = null;
-    updateAccountUI(null);
-    onAuthUserChanged(null).catch(() => {});
     lastUserSyncAt = 0;
 
     const expectedOwner = getExpectedAuthOwner();
     if (expectedOwner && expectedOwner.accountType !== "guest" && !isExplicitSignOut) {
       window.DecideForMeApp?.switchStorageScope(`uid_${expectedOwner.uid}`, { resetIfMissing: false });
-      setSyncStatus("offline", "Session expired");
-      showSessionExpiredBanner(expectedOwner.accountType);
+      setSyncStatus("syncing", "Reconnecting...");
+      if (!sessionExpiredTimer) {
+        const expectedAccountType = expectedOwner.accountType;
+        sessionExpiredTimer = setTimeout(() => {
+          sessionExpiredTimer = null;
+          if (currentUser || auth.currentUser) return;
+          syncAnalyticsUser(null);
+          updateAccountUI(null);
+          onAuthUserChanged(null).catch(() => {});
+          setSyncStatus("offline", "Session expired");
+          showSessionExpiredBanner(expectedAccountType);
+          if (!initialAuthResolved) {
+            initialAuthResolved = true;
+            recordDailyVisitStat(false);
+          }
+        }, SESSION_EXPIRED_GRACE_MS);
+      }
       return;
     }
 
+    clearSessionExpiredTimer();
+    syncAnalyticsUser(null);
+    updateAccountUI(null);
+    onAuthUserChanged(null).catch(() => {});
     hideSessionExpiredBanner();
 
     isExplicitSignOut = false;
     window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: false });
-    const localState = window.DecideForMeApp?.getState();
-    if (localState && !isUntouchedDefaultState(localState)) {
-      await ensureGuestAuth();
-    } else {
-      setSyncStatus("offline", "Local only");
+    setSyncStatus("offline", "Local only");
+    if (!initialAuthResolved) {
+      initialAuthResolved = true;
+      recordDailyVisitStat(true);
     }
     return;
   }
 
+  clearSessionExpiredTimer();
   isExplicitSignOut = false;
   currentUser = user;
-  if (!user.isAnonymous) {
-    hideSessionExpiredBanner();
-    setExpectedAuthOwner(user);
-    window.DecideForMeApp?.switchStorageScope(`uid_${user.uid}`, { resetIfMissing: false });
-  } else {
-    window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: false });
+  hideSessionExpiredBanner();
+  setExpectedAuthOwner(user);
+  window.DecideForMeApp?.switchStorageScope(`uid_${user.uid}`, { resetIfMissing: false });
+  if (!initialAuthResolved) {
+    initialAuthResolved = true;
+    recordDailyVisitStat(false);
   }
   syncAnalyticsUser(user);
   updateAccountUI(user);

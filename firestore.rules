@@ -108,10 +108,10 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUserState(request.resource.data);
-      allow update: if isOwner(userId) && isValidUserState(request.resource.data);
-      allow delete: if isOwner(userId);
+      allow read: if isOwner(userId) && isNonGuest();
+      allow create: if isOwner(userId) && isNonGuest() && isValidUserState(request.resource.data);
+      allow update: if isOwner(userId) && isNonGuest() && isValidUserState(request.resource.data);
+      allow delete: if isOwner(userId) && isNonGuest();
     }
 
     // 6-digit friend code lookup (get by exact code only; no listing)
@@ -221,6 +221,50 @@ service cloud.firestore {
                        request.resource.data.date is string &&
                        nudgeId == request.auth.uid + '_' + request.resource.data.toUid + '_' + request.resource.data.date &&
                        request.resource.data.createdAt is timestamp;
+    }
+
+    // Daily aggregate usage counters (guest vs non-guest, increment-only, console/admin read only)
+    function isStatFieldIncrement(field, data, existing) {
+      return !(field in data.diff(existing).affectedKeys()) || (
+        data[field] is int &&
+        ((!(field in existing) && data[field] == 1) ||
+         ((field in existing) && data[field] == existing[field] + 1))
+      );
+    }
+
+    function isValidStatsCreate(data) {
+      let allowed = ['guestVisits', 'userVisits', 'guestSpins', 'userSpins', 'guestCompletions', 'userCompletions', 'guestActions', 'userActions', 'updatedAt'];
+      return hasOnlyAllowedFields(allowed) &&
+             hasRequiredFields(['updatedAt']) &&
+             data.updatedAt is timestamp &&
+             (!('guestVisits' in data) || data.guestVisits == 1) &&
+             (!('userVisits' in data) || data.userVisits == 1) &&
+             (!('guestSpins' in data) || data.guestSpins == 1) &&
+             (!('userSpins' in data) || data.userSpins == 1) &&
+             (!('guestCompletions' in data) || data.guestCompletions == 1) &&
+             (!('userCompletions' in data) || data.userCompletions == 1) &&
+             (!('guestActions' in data) || data.guestActions == 1) &&
+             (!('userActions' in data) || data.userActions == 1);
+    }
+
+    function isValidStatsUpdate(data, existing) {
+      let allowed = ['guestVisits', 'userVisits', 'guestSpins', 'userSpins', 'guestCompletions', 'userCompletions', 'guestActions', 'userActions', 'updatedAt'];
+      return data.diff(existing).affectedKeys().hasOnly(allowed) &&
+             data.updatedAt is timestamp &&
+             isStatFieldIncrement('guestVisits', data, existing) &&
+             isStatFieldIncrement('userVisits', data, existing) &&
+             isStatFieldIncrement('guestSpins', data, existing) &&
+             isStatFieldIncrement('userSpins', data, existing) &&
+             isStatFieldIncrement('guestCompletions', data, existing) &&
+             isStatFieldIncrement('userCompletions', data, existing) &&
+             isStatFieldIncrement('guestActions', data, existing) &&
+             isStatFieldIncrement('userActions', data, existing);
+    }
+
+    match /stats/{dateStr} {
+      allow read: if false;
+      allow create: if dateStr.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isValidStatsCreate(request.resource.data);
+      allow update: if dateStr.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && isValidStatsUpdate(request.resource.data, resource.data);
     }
 
     // Default deny all other paths
