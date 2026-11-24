@@ -54,11 +54,75 @@ const firebaseConfig = {
   measurementId: "G-CM5VFFWF7S"
 };
 
+const FIREBASE_AUTH_STORAGE_KEY = `firebase:authUser:${firebaseConfig.apiKey}:[DEFAULT]`;
+
+/**
+ * Migrate any existing Firebase Auth session from IndexedDB to localStorage
+ * before initializing Auth with browserLocalPersistence as primary storage.
+ * Prevents one-time sign-out on upgrade and avoids IndexedDB cold-start flakiness in PWAs.
+ */
+async function migrateAuthPersistenceToLocalStorage() {
+  try {
+    if (typeof localStorage === "undefined" || localStorage.getItem(FIREBASE_AUTH_STORAGE_KEY)) {
+      return;
+    }
+    if (typeof indexedDB === "undefined") return;
+
+    await Promise.race([
+      new Promise((resolve) => {
+        try {
+          const openReq = indexedDB.open("firebaseLocalStorageDb");
+          openReq.onerror = () => resolve();
+          openReq.onblocked = () => resolve();
+          openReq.onsuccess = () => {
+            const idb = openReq.result;
+            try {
+              if (!idb.objectStoreNames.contains("firebaseLocalStorage")) {
+                idb.close();
+                resolve();
+                return;
+              }
+              const tx = idb.transaction("firebaseLocalStorage", "readonly");
+              const store = tx.objectStore("firebaseLocalStorage");
+              const getReq = store.get(FIREBASE_AUTH_STORAGE_KEY);
+              getReq.onsuccess = () => {
+                const record = getReq.result;
+                if (record && record.value && typeof record.value === "object" && record.value.uid) {
+                  try {
+                    localStorage.setItem(FIREBASE_AUTH_STORAGE_KEY, JSON.stringify(record.value));
+                  } catch {
+                    // Ignore storage quota errors
+                  }
+                }
+                idb.close();
+                resolve();
+              };
+              getReq.onerror = () => {
+                idb.close();
+                resolve();
+              };
+            } catch {
+              idb.close();
+              resolve();
+            }
+          };
+        } catch {
+          resolve();
+        }
+      }),
+      new Promise((resolve) => setTimeout(resolve, 1000))
+    ]);
+  } catch {
+    // Ignore migration errors
+  }
+}
+
 const app = initializeApp(firebaseConfig);
+await migrateAuthPersistenceToLocalStorage();
 let auth;
 try {
   auth = initializeAuth(app, {
-    persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+    persistence: [browserLocalPersistence, indexedDBLocalPersistence],
     popupRedirectResolver: browserPopupRedirectResolver
   });
 } catch {
