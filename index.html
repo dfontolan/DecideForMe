@@ -17,6 +17,17 @@
 </head>
 <body>
   <div class="app-shell" id="app-shell" data-mobile-view="decide">
+    <!-- Session Expired Re-Sign-In Banner -->
+    <div class="session-expired-banner hidden" id="session-expired-banner" role="status" aria-live="polite">
+      <span class="session-expired-text">
+        You were signed out. Your local data is still here — sign in again to sync.
+      </span>
+      <div class="session-expired-actions">
+        <button type="button" class="btn btn-primary btn-xs" id="btn-session-banner-signin">Sign in</button>
+        <button type="button" class="btn-icon session-banner-close" id="btn-session-banner-close" aria-label="Dismiss" title="Dismiss">✕</button>
+      </div>
+    </div>
+
     <!-- Top Header -->
     <header class="app-header">
       <div class="brand">
@@ -792,7 +803,7 @@
         <div>
           <div class="about-title-row">
             <h3 id="modal-about-title">DecideForMe</h3>
-            <span class="badge about-version-badge">v1.4 (build 84)</span>
+            <span class="badge about-version-badge">v1.4 (build 86)</span>
           </div>
           <p class="text-muted small">Activity Picker, Task Tracker &amp; Habit Logger</p>
         </div>
@@ -805,7 +816,7 @@
       <dl class="about-meta-list">
         <div class="about-meta-row">
           <dt>Version</dt>
-          <dd>1.4 (build 84)</dd>
+          <dd>1.4 (build 86)</dd>
         </div>
         <div class="about-meta-row">
           <dt>Author</dt>

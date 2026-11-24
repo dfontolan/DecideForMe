@@ -3782,9 +3782,10 @@ function renderCalendar() {
   const titleEl = document.getElementById("calendar-period-title");
   const rerollSummaryEl = document.getElementById("calendar-reroll-summary");
   const starSummaryEl = document.getElementById("calendar-star-summary");
-  if (starSummaryEl) {
-    starSummaryEl.classList.toggle("hidden", isWeekView);
-  }
+  let periodRerollTotal = 0;
+  let periodBronzeStars = 0;
+  let periodSilverStars = 0;
+  let periodGoldStars = 0;
   const {
     frozenDates,
     qualifyingSet,
@@ -3813,6 +3814,9 @@ function renderCalendar() {
       const dayScheduled = scheduledTasksList.filter((t) => shouldShowTaskOnCalendar(t, dateStr));
       const dayRerolls = Number(state.rerollsByDate[dateStr]) || 0;
       const { hasGoldStar, hasSilverStar, hasBronzeStar } = getStarStatusForDate(dateStr, dayLogs.length > 0);
+      if (hasGoldStar) periodGoldStars++;
+      else if (hasSilverStar) periodSilverStars++;
+      else if (hasBronzeStar) periodBronzeStars++;
       const isFrozen = frozenDates.has(dateStr);
       const isStreakDay = qualifyingSet.has(dateStr);
       const isChainNode = streakChainSet.has(dateStr);
@@ -3907,9 +3911,7 @@ function renderCalendar() {
       gridEl.appendChild(row);
     }
 
-    rerollSummaryEl.textContent = `🎲 ${weekRerollTotal}`;
-    rerollSummaryEl.classList.toggle("badge-reroll", weekRerollTotal > 0);
-    rerollSummaryEl.classList.remove("hidden");
+    periodRerollTotal = weekRerollTotal;
   } else {
     titleEl.textContent = `${MONTH_NAMES[calMonth]} ${calYear}`;
 
@@ -4006,17 +4008,31 @@ function renderCalendar() {
       gridEl.appendChild(cell);
     }
 
-    rerollSummaryEl.textContent = `🎲 ${monthRerollTotal}`;
-    rerollSummaryEl.classList.toggle("badge-reroll", monthRerollTotal > 0);
-    rerollSummaryEl.classList.toggle("hidden", monthRerollTotal === 0);
-
-    const bronzeCountEl = document.getElementById("cal-month-bronze-count");
-    const silverCountEl = document.getElementById("cal-month-silver-count");
-    const goldCountEl = document.getElementById("cal-month-gold-count");
-    if (bronzeCountEl) bronzeCountEl.textContent = String(monthBronzeStars);
-    if (silverCountEl) silverCountEl.textContent = String(monthSilverStars);
-    if (goldCountEl) goldCountEl.textContent = String(monthGoldStars);
+    periodRerollTotal = monthRerollTotal;
+    periodBronzeStars = monthBronzeStars;
+    periodSilverStars = monthSilverStars;
+    periodGoldStars = monthGoldStars;
   }
+
+  if (rerollSummaryEl) {
+    rerollSummaryEl.textContent = `🎲 ${periodRerollTotal}`;
+    rerollSummaryEl.classList.toggle("badge-reroll", periodRerollTotal > 0);
+    rerollSummaryEl.classList.toggle("hidden", periodRerollTotal === 0);
+  }
+
+  if (starSummaryEl) {
+    starSummaryEl.classList.remove("hidden");
+    starSummaryEl.title = isWeekView
+      ? "Stars earned this week (Bronze / Silver / Gold)"
+      : "Stars earned this month (Bronze / Silver / Gold)";
+  }
+
+  const bronzeCountEl = document.getElementById("cal-month-bronze-count");
+  const silverCountEl = document.getElementById("cal-month-silver-count");
+  const goldCountEl = document.getElementById("cal-month-gold-count");
+  if (bronzeCountEl) bronzeCountEl.textContent = String(periodBronzeStars);
+  if (silverCountEl) silverCountEl.textContent = String(periodSilverStars);
+  if (goldCountEl) goldCountEl.textContent = String(periodGoldStars);
 }
 
 function createMonthlyDayCell({
@@ -5438,6 +5454,7 @@ function initEvents() {
     usernameModal.classList.remove("hidden");
     if (usernameInput) usernameInput.focus();
   };
+  openUsernameAuthModalHandler = openUsernameAuthModal;
 
   const usernameSignInBtn = document.getElementById("btn-username-signin");
   if (usernameSignInBtn) {
@@ -6698,8 +6715,11 @@ function initPwa() {
   });
 }
 
+let openUsernameAuthModalHandler = null;
+
 // Expose state hooks for Firebase cloud sync
 window.DecideForMeApp = {
+  openUsernameAuthModal: () => openUsernameAuthModalHandler?.(),
   getState: () => state,
   applyCloudState: (nextState) => {
     const prevLocal = state;

@@ -248,13 +248,22 @@ function getSentSetToday() {
 
 function markSentToday(toUid) {
   if (!currentUser) return;
+  const today = getLogicalToday();
   try {
     const set = getSentSetToday();
     set.add(toUid);
     localStorage.setItem(
-      sentStorageKey(currentUser.uid, getLogicalToday()),
+      sentStorageKey(currentUser.uid, today),
       JSON.stringify([...set])
     );
+    const keyPrefix = `decideForMe_nudgeSent_${currentUser.uid}_`;
+    const todayKey = sentStorageKey(currentUser.uid, today);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(keyPrefix) && k !== todayKey) {
+        localStorage.removeItem(k);
+      }
+    }
   } catch {
     // Ignore storage errors
   }
@@ -390,7 +399,7 @@ function syncFriendStatusListeners() {
     }
   }
 
-  // Only fetch dailyStatus while the Friends modal is open, respecting the 60s TTL
+  // Only fetch dailyStatus while the Friends modal is open, respecting the 5-minute TTL
   if (!isFriendsModalOpen()) return;
 
   const now = Date.now();
@@ -790,6 +799,11 @@ export async function cleanupSocialAccountData(uid) {
       query(collection(db, "friendships"), where("users", "array-contains", uid))
     );
     await Promise.all(fsSnap.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+
+    const nudgeSnap = await getDocs(
+      query(collection(db, "nudges"), where("toUid", "==", uid))
+    );
+    await Promise.all(nudgeSnap.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
   } catch (err) {
     console.warn("Social cleanup error:", err);
   }
@@ -1168,7 +1182,7 @@ function bindFriendsUI() {
 
   document.getElementById("btn-friends-guest-username")?.addEventListener("click", () => {
     closeFriendsModal();
-    window.DecideForMeCloud?.signInWithUsername?.();
+    window.DecideForMeApp?.openUsernameAuthModal?.();
   });
 
   document.getElementById("btn-friends-edit")?.addEventListener("click", () => {

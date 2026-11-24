@@ -200,6 +200,41 @@ function clearExpectedAuthOwner() {
   }
 }
 
+let sessionBannerBound = false;
+let sessionBannerAccountType = null;
+
+function bindSessionExpiredBanner() {
+  if (sessionBannerBound) return;
+  const banner = document.getElementById("session-expired-banner");
+  const signInBtn = document.getElementById("btn-session-banner-signin");
+  const closeBtn = document.getElementById("btn-session-banner-close");
+  if (!banner) return;
+  sessionBannerBound = true;
+
+  signInBtn?.addEventListener("click", () => {
+    if (sessionBannerAccountType === "google") {
+      signInWithGoogle();
+    } else {
+      window.DecideForMeApp?.openUsernameAuthModal?.();
+    }
+  });
+
+  closeBtn?.addEventListener("click", () => {
+    banner.classList.add("hidden");
+  });
+}
+
+function showSessionExpiredBanner(accountType) {
+  bindSessionExpiredBanner();
+  sessionBannerAccountType = accountType || null;
+  document.getElementById("session-expired-banner")?.classList.remove("hidden");
+}
+
+function hideSessionExpiredBanner() {
+  sessionBannerAccountType = null;
+  document.getElementById("session-expired-banner")?.classList.add("hidden");
+}
+
 function ensureGuestAuth() {
   if (currentUser || auth.currentUser) return Promise.resolve(currentUser || auth.currentUser);
   if (guestSignInPromise) return guestSignInPromise;
@@ -688,6 +723,11 @@ async function writeStateToFirestore(user, stateObj, forceMetadataUpdate = false
 function scheduleSave(stateObj) {
   const sanitized = sanitizeCloudState(stateObj);
   if (!currentUser) {
+    const expectedOwner = getExpectedAuthOwner();
+    if (expectedOwner && expectedOwner.accountType !== "guest") {
+      setSyncStatus("offline", "Session expired");
+      return;
+    }
     if (isUntouchedDefaultState(sanitized)) return;
     pendingState = sanitized;
     setSyncStatus("syncing");
@@ -931,9 +971,6 @@ async function signInWithUsername(rawUsername, password, isSignUp) {
     ) {
       throw new Error("Incorrect username or password.");
     }
-    if (err.code === "auth/weak-password") {
-      throw new Error("Password must be at least 6 characters.");
-    }
     if (err.code === "auth/too-many-requests") {
       throw new Error("Too many attempts. Please wait a moment and try again.");
     }
@@ -1049,6 +1086,14 @@ function reauthenticateUsernameWithModal(user) {
   });
 }
 
+async function reauthenticateForDeletion(user) {
+  if (getAccountType(user) === "google") {
+    await reauthenticateWithPopup(user, googleProvider);
+    return true;
+  }
+  return reauthenticateUsernameWithModal(user);
+}
+
 async function deleteAccount() {
   const user = auth.currentUser;
   if (!user || user.isAnonymous) return;
@@ -1060,6 +1105,16 @@ async function deleteAccount() {
   pendingState = null;
 
   try {
+    const lastSignInMs = Date.parse(user.metadata?.lastSignInTime || "") || 0;
+    const isRecentLogin = lastSignInMs > 0 && Date.now() - lastSignInMs < 4 * 60 * 1000;
+    if (!isRecentLogin) {
+      const verified = await reauthenticateForDeletion(user);
+      if (!verified) {
+        notifyToast("Account deletion cancelled.");
+        return;
+      }
+    }
+
     try {
       await cleanupSocialAccountData(user.uid);
       await deleteDoc(doc(db, "users", user.uid));
@@ -1071,22 +1126,15 @@ async function deleteAccount() {
       await deleteUser(user);
     } catch (authErr) {
       if (authErr.code === "auth/requires-recent-login") {
-        if (getAccountType(user) === "google") {
-          await reauthenticateWithPopup(user, googleProvider);
-          await cleanupSocialAccountData(user.uid);
-          await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
-          await deleteUser(user);
-        } else {
-          const verified = await reauthenticateUsernameWithModal(user);
-          if (!verified) {
-            notifyToast("Account deletion cancelled.");
-            await attachUserSync(user);
-            return;
-          }
-          await cleanupSocialAccountData(user.uid);
-          await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
-          await deleteUser(user);
+        const verified = await reauthenticateForDeletion(user);
+        if (!verified) {
+          notifyToast("Account deletion cancelled.");
+          await attachUserSync(user);
+          return;
         }
+        await cleanupSocialAccountData(user.uid);
+        await deleteDoc(doc(db, "users", user.uid)).catch(() => {});
+        await deleteUser(user);
       } else {
         throw authErr;
       }
@@ -1099,7 +1147,6 @@ async function deleteAccount() {
   } catch (err) {
     if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
       notifyToast("Account deletion cancelled.");
-      await attachUserSync(user);
       return;
     }
     console.error("Delete account error:", err);
@@ -1124,12 +1171,13 @@ onAuthStateChanged(auth, async (user) => {
 
     const expectedOwner = getExpectedAuthOwner();
     if (expectedOwner && expectedOwner.accountType !== "guest" && !isExplicitSignOut) {
-      clearExpectedAuthOwner();
-      window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: true });
+      window.DecideForMeApp?.switchStorageScope(`uid_${expectedOwner.uid}`, { resetIfMissing: false });
       setSyncStatus("offline", "Session expired");
-      notifyToast("You were signed out. Sign in again to sync your account.");
+      showSessionExpiredBanner(expectedOwner.accountType);
       return;
     }
+
+    hideSessionExpiredBanner();
 
     isExplicitSignOut = false;
     window.DecideForMeApp?.switchStorageScope("guest", { resetIfMissing: false });
@@ -1145,6 +1193,7 @@ onAuthStateChanged(auth, async (user) => {
   isExplicitSignOut = false;
   currentUser = user;
   if (!user.isAnonymous) {
+    hideSessionExpiredBanner();
     setExpectedAuthOwner(user);
     window.DecideForMeApp?.switchStorageScope(`uid_${user.uid}`, { resetIfMissing: false });
   } else {

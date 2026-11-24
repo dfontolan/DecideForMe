@@ -2,7 +2,7 @@
  * DecideForMe — Offline-First Service Worker
  */
 
-const CACHE_NAME = "decide-for-me-pwa-v84";
+const CACHE_NAME = "decide-for-me-pwa-v86";
 const PRECACHE_ASSETS = [
   "./",
   "./index.html",
@@ -21,7 +21,11 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_ASSETS))
+      .then((cache) =>
+        cache.addAll(
+          PRECACHE_ASSETS.map((url) => new Request(url, { cache: "no-cache" }))
+        )
+      )
       .then(() => self.skipWaiting())
   );
 });

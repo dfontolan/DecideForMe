@@ -475,6 +475,46 @@ body {
   padding: 20px 24px 48px;
 }
 
+/* Session Expired Re-Sign-In Banner */
+.session-expired-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.session-expired-text {
+  line-height: 1.35;
+}
+
+.session-expired-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.session-banner-close {
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 4px 6px;
+}
+
+[data-theme="win95"] .session-expired-banner {
+  background: #ffffe1;
+  color: #000000;
+  border: none;
+  border-radius: 0;
+  box-shadow: var(--shadow-card);
+}
+
 /* Header */
 .app-header {
   display: flex;
