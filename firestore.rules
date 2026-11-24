@@ -114,10 +114,10 @@ service cloud.firestore {
       allow delete: if isOwner(userId) && isNonGuest();
     }
 
-    // 6-digit friend code lookup (get by exact code only; no listing)
+    // 6-digit friend code lookup (get by exact code, or list own doc by uid)
     match /friendCodes/{code} {
       allow get: if isNonGuest();
-      allow list: if false;
+      allow list: if isNonGuest() && resource.data.uid == request.auth.uid;
       allow create: if isNonGuest() &&
                        code.matches('^[0-9]{6}$') &&
                        hasOnlyAllowedFields(['uid', 'displayName', 'createdAt']) &&
@@ -136,22 +136,6 @@ service cloud.firestore {
                        request.resource.data.displayName.size() >= 1 &&
                        request.resource.data.displayName.size() <= 24;
       allow delete: if isNonGuest() && resource.data.uid == request.auth.uid;
-    }
-
-    // Owner-only social profile (stores own 6-digit code & nickname)
-    match /socialProfiles/{userId} {
-      allow read: if isOwner(userId) && isNonGuest();
-      allow create, update: if isOwner(userId) &&
-                               isNonGuest() &&
-                               hasOnlyAllowedFields(['code', 'displayName', 'updatedAt']) &&
-                               hasRequiredFields(['code', 'displayName', 'updatedAt']) &&
-                               request.resource.data.code is string &&
-                               request.resource.data.code.matches('^[0-9]{6}$') &&
-                               request.resource.data.displayName is string &&
-                               request.resource.data.displayName.size() >= 1 &&
-                               request.resource.data.displayName.size() <= 24 &&
-                               request.resource.data.updatedAt is timestamp;
-      allow delete: if isOwner(userId) && isNonGuest();
     }
 
     // Friendships & pending friend requests

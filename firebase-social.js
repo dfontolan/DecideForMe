@@ -12,6 +12,7 @@ import {
   deleteDoc,
   query,
   where,
+  limit,
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
@@ -204,7 +205,13 @@ function markNudgeHandled(uid, nudgeId) {
 }
 
 function getLogicalToday() {
-  return window.DecideForMeApp?.getLogicalTodayStr?.() || new Date().toISOString().slice(0, 10);
+  const fromApp = window.DecideForMeApp?.getLogicalTodayStr?.();
+  if (fromApp) return fromApp;
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getYesterdayStr(dateStr) {
@@ -349,6 +356,8 @@ function clearSocialListeners() {
   socialProfile = null;
   lastSyncedStarJson = "";
   isEditingNickname = false;
+  isEditingFriends = false;
+  confirmingRemovePairId = null;
   cheerQueue.length = 0;
   activeCheerModal = null;
   document.getElementById("modal-cheer")?.classList.add("hidden");
@@ -527,10 +536,13 @@ async function loadSocialProfile(user) {
     return socialProfile;
   }
   try {
-    const snap = await getDoc(doc(db, "socialProfiles", user.uid));
-    if (snap.exists()) {
-      const data = snap.data();
-      socialProfile = { code: data.code, displayName: data.displayName };
+    const snap = await getDocs(
+      query(collection(db, "friendCodes"), where("uid", "==", user.uid), limit(1))
+    );
+    if (!snap.empty) {
+      const codeDoc = snap.docs[0];
+      const data = codeDoc.data();
+      socialProfile = { code: codeDoc.id, displayName: data.displayName };
       writeCachedSocialProfile(user.uid, socialProfile);
       return socialProfile;
     }
@@ -551,20 +563,18 @@ async function provisionSocialProfile(nickname) {
 
   // If updating existing profile nickname
   if (socialProfile?.code) {
-    await updateDoc(doc(db, "socialProfiles", currentUser.uid), {
-      displayName: cleanName,
-      updatedAt: serverTimestamp()
-    });
     await updateDoc(doc(db, "friendCodes", socialProfile.code), {
       displayName: cleanName
     });
     // Also update own display name in existing friendships
-    for (const f of friendships) {
-      await updateDoc(doc(db, "friendships", f.pairId), {
-        [`names.${currentUser.uid}`]: cleanName,
-        updatedAt: serverTimestamp()
-      }).catch(() => {});
-    }
+    await Promise.all(
+      friendships.map((f) =>
+        updateDoc(doc(db, "friendships", f.pairId), {
+          [`names.${currentUser.uid}`]: cleanName,
+          updatedAt: serverTimestamp()
+        }).catch(() => {})
+      )
+    );
     socialProfile = { ...socialProfile, displayName: cleanName };
     writeCachedSocialProfile(currentUser.uid, socialProfile);
     return socialProfile;
@@ -594,12 +604,6 @@ async function provisionSocialProfile(nickname) {
   if (!claimedCode) {
     throw new Error("Could not generate a unique code. Please try again.");
   }
-
-  await setDoc(doc(db, "socialProfiles", currentUser.uid), {
-    code: claimedCode,
-    displayName: cleanName,
-    updatedAt: serverTimestamp()
-  });
 
   socialProfile = { code: claimedCode, displayName: cleanName };
   writeCachedSocialProfile(currentUser.uid, socialProfile);
@@ -785,14 +789,10 @@ export async function cleanupSocialAccountData(uid) {
     // Ignore storage errors
   }
   try {
-    const profileSnap = await getDoc(doc(db, "socialProfiles", uid));
-    if (profileSnap.exists()) {
-      const code = profileSnap.data()?.code;
-      if (code) {
-        await deleteDoc(doc(db, "friendCodes", code)).catch(() => {});
-      }
-    }
-    await deleteDoc(doc(db, "socialProfiles", uid)).catch(() => {});
+    const codeSnap = await getDocs(
+      query(collection(db, "friendCodes"), where("uid", "==", uid))
+    );
+    await Promise.all(codeSnap.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
     await deleteDoc(doc(db, "dailyStatus", uid)).catch(() => {});
 
     const fsSnap = await getDocs(
